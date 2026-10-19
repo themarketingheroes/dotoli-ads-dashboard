@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { getClients, ownerEmail } from "./config";
+import { authEnabled, getClients, ownerEmail } from "./config";
 import { readSession, SESSION_COOKIE } from "./session";
 import { readLatestJson, writeJson } from "./store";
 import type { AccessEntry, ClientConfig } from "./types";
@@ -18,6 +18,7 @@ export interface Viewer {
   email: string;
   isOwner: boolean;
   clients: ClientConfig[]; // clients this viewer may see
+  open?: boolean; // sign-in is switched off
 }
 
 export async function resolveViewer(email: string): Promise<Viewer | null> {
@@ -31,6 +32,7 @@ export async function resolveViewer(email: string): Promise<Viewer | null> {
 }
 
 export async function currentViewer(): Promise<Viewer | null> {
+  if (!authEnabled()) return { email: "", isOwner: false, clients: getClients(), open: true };
   const session = await readSession((await cookies()).get(SESSION_COOKIE)?.value);
   if (!session) return null;
   return resolveViewer(session.email);

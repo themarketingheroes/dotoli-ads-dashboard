@@ -40,10 +40,14 @@ export default function Shell({
           </>
         )}
         <span className="spacer" />
-        <span className="user">{viewer.email}</span>
-        <form action="/api/auth/logout" method="post">
-          <button className="btn small" type="submit">Sign out</button>
-        </form>
+        {!viewer.open && (
+          <>
+            <span className="user">{viewer.email}</span>
+            <form action="/api/auth/logout" method="post">
+              <button className="btn small" type="submit">Sign out</button>
+            </form>
+          </>
+        )}
       </header>
       <div className="layout">
         <nav className="sidebar" aria-label="Clients">

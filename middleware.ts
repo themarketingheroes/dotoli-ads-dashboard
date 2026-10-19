@@ -7,6 +7,10 @@ const PUBLIC = ["/login", "/api/auth/", "/api/refresh"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  if ((process.env.DASHBOARD_AUTH ?? "on").toLowerCase() === "off") {
+    if (pathname === "/login") return NextResponse.redirect(new URL("/", req.url));
+    return NextResponse.next();
+  }
   if (PUBLIC.some((p) => pathname === p || pathname.startsWith(p))) return NextResponse.next();
   const session = await readSession(req.cookies.get(SESSION_COOKIE)?.value);
   if (session) return NextResponse.next();

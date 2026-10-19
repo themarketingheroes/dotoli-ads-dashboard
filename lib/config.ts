@@ -20,6 +20,11 @@ export function getClients(): ClientConfig[] {
   }
 }
 
+// Set DASHBOARD_AUTH=off to open the dashboard without sign-in.
+export function authEnabled(): boolean {
+  return (process.env.DASHBOARD_AUTH ?? "on").toLowerCase() !== "off";
+}
+
 export function ownerEmail(): string {
   return (process.env.OWNER_EMAIL ?? "").trim().toLowerCase();
 }
