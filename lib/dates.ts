@@ -16,11 +16,17 @@ export function addDays(date: string, n: number): string {
 }
 
 export function windows(tz: string) {
-  const yesterday = addDays(todayIn(tz), -1);
+  const today = todayIn(tz);
+  const yesterday = addDays(today, -1);
+  const series: [string, string] = [addDays(yesterday, -29), yesterday];
+  const mtd: [string, string] = [`${today.slice(0, 8)}01`, today]; // month to date, including today so far
   return {
     yesterday,
     last7: [addDays(yesterday, -6), yesterday] as [string, string],
     prev7: [addDays(yesterday, -13), addDays(yesterday, -7)] as [string, string],
-    series: [addDays(yesterday, -29), yesterday] as [string, string],
+    series,
+    mtd,
+    // One daily pull covers every window above.
+    fetch: [mtd[0] < series[0] ? mtd[0] : series[0], today] as [string, string],
   };
 }

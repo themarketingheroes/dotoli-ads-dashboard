@@ -5,9 +5,15 @@ import RefreshButton from "@/components/RefreshButton";
 import StatusBanner, { lastUpdated } from "@/components/StatusBanner";
 import { MetaLogo, GoogleAdsLogo } from "@/components/Icons";
 import { currentViewer } from "@/lib/access";
-import { money, num } from "@/lib/format";
+import { money, num, shortDate } from "@/lib/format";
 import { latestSnapshot } from "@/lib/refresh";
-import type { AccountReport } from "@/lib/types";
+import type { AccountReport, Snapshot } from "@/lib/types";
+
+// "month to date (Oct 1 to Oct 19)", taken from the first account that has the range.
+function monthLabel(snapshot: Snapshot | null): string {
+  const range = snapshot?.clients.flatMap((c) => [...c.meta, ...c.google]).find((a) => a.dates.mtd)?.dates.mtd;
+  return range ? `month to date (${shortDate(range[0])} to ${shortDate(range[1])})` : "month to date";
+}
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +21,24 @@ export const dynamic = "force-dynamic";
 function AccountLine({ a, icon }: { a: AccountReport; icon: React.ReactNode }) {
   const crit = a.flags.filter((f) => f.level === "critical").length;
   const warn = a.flags.filter((f) => f.level === "warning").length;
+  const m = a.mtd;
   return (
-    <div className="row" style={{ alignItems: "center" }}>
-      <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div className="row" style={{ alignItems: "center", gap: 12 }}>
+      <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {icon}
-        {a.error ? <span className="badge red">Error</span> : <b className="mono">{money(a.last7.spend, a.currency)}</b>}
-        {!a.error && <span className="flat mono">{num(a.last7.results, 1)} {a.resultLabel.toLowerCase()}</span>}
+        {a.error ? (
+          <span className="badge red">Error</span>
+        ) : !m ? (
+          <span className="flat">Refresh to load month to date</span>
+        ) : (
+          <>
+            <b className="mono">{money(m.spend, a.currency)}</b>
+            <span className="flat mono">
+              {num(m.results, 1)} {a.resultLabel.toLowerCase()}
+              {m.costPerResult !== null && ` · ${money(m.costPerResult, a.currency)} each`}
+            </span>
+          </>
+        )}
       </span>
       <span>
         {crit > 0 && <span className="badge red">{crit} critical</span>}{" "}
@@ -42,7 +60,8 @@ export default async function Overview() {
       <div className="page-head">
         <div>
           <h1>Overview</h1>
-          <p>{lastUpdated(snapshot)} Spend and results are last 7 days, per ad account.</p>
+          <p>{lastUpdated(snapshot)}</p>
+          <p>Spend and results are <b style={{ color: "var(--fg)", fontWeight: 500 }}>{monthLabel(snapshot)}</b>, per ad account.</p>
         </div>
         <RefreshButton />
       </div>

@@ -49,7 +49,8 @@ export interface AccountReport {
   status: string;
   error: string | null;
   resultLabel: string;
-  dates: { yesterday: string; last7: [string, string]; prev7: [string, string] };
+  dates: { yesterday: string; last7: [string, string]; prev7: [string, string]; mtd?: [string, string] };
+  mtd?: Metrics; // month to date (optional so older snapshots still render)
   yesterday: Metrics;
   last7: Metrics;
   prev7: Metrics;

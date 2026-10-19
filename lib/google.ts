@@ -74,7 +74,7 @@ export async function googleAccount(cid: string): Promise<AccountReport> {
 
   const [campaigns, daily, policy] = await Promise.all([
     gaql(cid, "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.primary_status, campaign.primary_status_reasons, campaign_budget.amount_micros FROM campaign WHERE campaign.status != 'REMOVED'"),
-    gaql(cid, `SELECT campaign.id, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${w.series[0]}' AND '${w.series[1]}'`),
+    gaql(cid, `SELECT campaign.id, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${w.fetch[0]}' AND '${w.fetch[1]}'`),
     gaql(cid, "SELECT campaign.id, ad_group_ad.policy_summary.approval_status FROM ad_group_ad WHERE campaign.status = 'ENABLED' AND ad_group.status = 'ENABLED' AND ad_group_ad.status = 'ENABLED' AND ad_group_ad.policy_summary.approval_status IN ('DISAPPROVED', 'APPROVED_LIMITED')").catch(() => [] as Json[]),
   ]);
 
@@ -148,7 +148,8 @@ export async function googleAccount(cid: string): Promise<AccountReport> {
     status: c.status === "ENABLED" ? "Active" : (c.status ?? "Unknown"),
     error: null,
     resultLabel: "Conversions",
-    dates: { yesterday: w.yesterday, last7: w.last7, prev7: w.prev7 },
+    dates: { yesterday: w.yesterday, last7: w.last7, prev7: w.prev7, mtd: w.mtd },
+    mtd: finalize(sumWindow(accountDays, w.mtd[0], w.mtd[1])),
     yesterday: finalize(sumWindow(accountDays, w.yesterday, w.yesterday)),
     last7: finalize(sumWindow(accountDays, w.last7[0], w.last7[1])),
     prev7: finalize(sumWindow(accountDays, w.prev7[0], w.prev7[1])),

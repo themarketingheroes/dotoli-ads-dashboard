@@ -111,7 +111,7 @@ export async function metaAccount(acct: string): Promise<AccountReport> {
 
   const [campaigns, daily, freqRows, acctFreq] = await Promise.all([
     graphAll(`act_${acct}/campaigns`, { fields: "id,name,effective_status,objective,daily_budget,lifetime_budget" }),
-    dailyInsights(acct, w.series[0], w.series[1]),
+    dailyInsights(acct, w.fetch[0], w.fetch[1]),
     graphAll(`act_${acct}/insights`, { level: "campaign", fields: "campaign_id,frequency", time_range: JSON.stringify({ since: w.last7[0], until: w.last7[1] }) }),
     graphAll(`act_${acct}/insights`, {
       level: "account",
@@ -186,7 +186,8 @@ export async function metaAccount(acct: string): Promise<AccountReport> {
     status: ACCOUNT_STATUS[info.account_status] ?? String(info.account_status),
     error: null,
     resultLabel: labels.size === 1 ? [...labels][0] : labels.size === 0 ? "Results" : "Results (mixed)",
-    dates: { yesterday: w.yesterday, last7: w.last7, prev7: w.prev7 },
+    dates: { yesterday: w.yesterday, last7: w.last7, prev7: w.prev7, mtd: w.mtd },
+    mtd: finalize(sumWindow(accountDays, w.mtd[0], w.mtd[1])),
     yesterday: finalize(sumWindow(accountDays, w.yesterday, w.yesterday)),
     last7: finalize(sumWindow(accountDays, w.last7[0], w.last7[1]), freq[0] ?? null),
     prev7: finalize(sumWindow(accountDays, w.prev7[0], w.prev7[1]), freq[1] ?? null),
