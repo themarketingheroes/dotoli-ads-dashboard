@@ -115,6 +115,7 @@ export async function googleAccount(cid: string): Promise<AccountReport> {
     const l7 = sumWindow(days, w.last7[0], w.last7[1]);
     const off = camp.status !== "ENABLED" || ["ENDED", "REMOVED"].includes(camp.primaryStatus);
     if (off && l7.spend === 0) continue;
+    if (camp.advertisingChannelType === "LOCAL_SERVICES" && l7.spend === 0) continue; // auto-created placeholder
     const notes: string[] = [];
     const reasons: string[] = (camp.primaryStatusReasons ?? []).filter((r: string) => !IGNORE_REASONS.includes(r));
     if (["NOT_ELIGIBLE", "LIMITED", "MISCONFIGURED", "PENDING"].includes(camp.primaryStatus) && reasons.length) {

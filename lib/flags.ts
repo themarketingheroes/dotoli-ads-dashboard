@@ -21,6 +21,7 @@ export function flagAccount(a: AccountReport): Flag[] {
   if (a.status !== "Active") f.push({ level: "critical", text: `Account status: ${a.status}` });
 
   for (const c of a.campaigns) {
+    if (c.dailyBudget !== null && c.dailyBudget < 1 && c.last7.spend === 0) continue; // system placeholders
     if (isLive(a, c.status) && c.yesterday.spend === 0) {
       const budget = c.dailyBudget ? ` (budget ${money(c.dailyBudget, cur)}/day)` : "";
       const why = c.notes.find((n) => n.includes("paused") || /^(Not eligible|Limited|Misconfigured|Pending):/.test(n));
@@ -40,12 +41,13 @@ export function flagAccount(a: AccountReport): Flag[] {
 
   // Pacing: yesterday's spend vs the summed daily budgets of live campaigns.
   // Skipped when anything that spent yesterday has no daily budget (lifetime or ad set budgets).
-  const budgets = a.campaigns.filter((c) => c.dailyBudget && isLive(a, c.status)).reduce((s, c) => s + (c.dailyBudget ?? 0), 0);
+  const budgets = a.campaigns.filter((c) => c.dailyBudget && c.dailyBudget >= 1 && isLive(a, c.status)).reduce((s, c) => s + (c.dailyBudget ?? 0), 0);
   const unbudgeted = a.campaigns.some((c) => c.yesterday.spend > 0 && !c.dailyBudget);
   if (budgets > 0 && a.yesterday.spend > 0 && !unbudgeted) {
     const ratio = a.yesterday.spend / budgets;
     if (ratio < 0.7) f.push({ level: "warning", text: `Under-pacing: spent ${money(a.yesterday.spend, cur)} yesterday vs ${money(budgets, cur)} in daily budgets (${(ratio * 100).toFixed(0)}%)` });
-    if (ratio > 1.3) f.push({ level: "warning", text: `Over-pacing: spent ${money(a.yesterday.spend, cur)} yesterday vs ${money(budgets, cur)} in daily budgets (${(ratio * 100).toFixed(0)}%)` });
+    // Meta may spend up to 75% over a daily budget on any single day, so only flag beyond that.
+    if (ratio > (a.platform === "meta" ? 1.75 : 1.3)) f.push({ level: "warning", text: `Over-pacing: spent ${money(a.yesterday.spend, cur)} yesterday vs ${money(budgets, cur)} in daily budgets (${(ratio * 100).toFixed(0)}%)` });
   }
 
   const order = { critical: 0, warning: 1, info: 2 };
