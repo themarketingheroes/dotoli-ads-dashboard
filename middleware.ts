@@ -3,7 +3,7 @@ import { readSession, SESSION_COOKIE } from "./lib/session";
 
 // Everything requires a signed-in session except the login flow and the
 // refresh endpoint (which checks the cron secret or the session itself).
-const PUBLIC = ["/login", "/api/auth/", "/api/refresh"];
+const PUBLIC = ["/login", "/privacy", "/api/auth/", "/api/refresh"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
