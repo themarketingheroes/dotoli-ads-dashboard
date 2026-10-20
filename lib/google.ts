@@ -1,6 +1,7 @@
+import { byCampaign, dailySeries, sumRange } from "./aggregate";
 import { windows } from "./dates";
-import { addRaw, finalize, Raw, seriesFrom, sumWindow, zeroRaw } from "./metrics";
-import type { AccountReport, CampaignRow } from "./types";
+import { finalize, zeroRaw } from "./metrics";
+import type { AccountReport, CampaignRow, DailyRow, DailyStore, GoogleAccountConfig } from "./types";
 
 const VERSION = process.env.GOOGLE_ADS_API_VERSION || "v25";
 
@@ -66,58 +67,82 @@ const CHANNEL: Record<string, string> = {
   DEMAND_GEN: "Demand Gen", SHOPPING: "Shopping", LOCAL_SERVICES: "Local Services", SMART: "Smart",
 };
 
-export async function googleAccount(cid: string): Promise<AccountReport> {
+export async function googleInfo(cid: string) {
   const [info] = await gaql(cid, "SELECT customer.descriptive_name, customer.currency_code, customer.time_zone, customer.status FROM customer");
   const c = info?.customer ?? {};
-  const tz = c.timeZone || "America/New_York";
-  const w = windows(tz);
+  return {
+    name: (c.descriptiveName as string) || "",
+    currency: c.currencyCode ?? "USD",
+    timezone: c.timeZone || "America/New_York",
+    status: c.status === "ENABLED" ? "Active" : (c.status ?? "Unknown"),
+  };
+}
 
-  const [campaigns, daily, policy] = await Promise.all([
+// Daily campaign rows for [from, to], with conversions split by conversion action
+// so the counting rule can change later without refetching.
+export async function googleHistory(cid: string, from: string, to: string): Promise<{ rows: DailyRow[]; campaigns: DailyStore["campaigns"]; actions: Record<string, string> }> {
+  const [perf, conv] = await Promise.all([
+    gaql(cid, `SELECT campaign.id, campaign.name, campaign.advertising_channel_type, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks FROM campaign WHERE segments.date BETWEEN '${from}' AND '${to}'`),
+    gaql(cid, `SELECT campaign.id, segments.date, segments.conversion_action_name, segments.conversion_action_category, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${from}' AND '${to}' AND metrics.conversions > 0`),
+  ]);
+  const campaigns: DailyStore["campaigns"] = {};
+  const actions: Record<string, string> = {};
+  const rows = new Map<string, DailyRow>();
+  const key = (d: string, c: string) => `${d}|${c}`;
+  for (const r of perf) {
+    const c = String(r.campaign?.id);
+    const d = r.segments?.date as string;
+    campaigns[c] = { name: r.campaign?.name ?? c, type: CHANNEL[r.campaign?.advertisingChannelType] ?? r.campaign?.advertisingChannelType ?? "" };
+    const m = r.metrics ?? {};
+    rows.set(key(d, c), { d, c, s: Number(m.costMicros ?? 0) / 1e6, i: Number(m.impressions ?? 0), k: Number(m.clicks ?? 0), r: 0, v: 0, a: {} });
+  }
+  for (const r of conv) {
+    const c = String(r.campaign?.id);
+    const d = r.segments?.date as string;
+    const name = r.segments?.conversionActionName as string;
+    actions[name] = r.segments?.conversionActionCategory ?? "";
+    const row = rows.get(key(d, c)) ?? { d, c, s: 0, i: 0, k: 0, r: 0, v: 0, a: {} };
+    const prev = row.a![name] ?? [0, 0];
+    row.a![name] = [prev[0] + Number(r.metrics?.conversions ?? 0), prev[1] + Number(r.metrics?.conversionsValue ?? 0)];
+    rows.set(key(d, c), row);
+  }
+  return { rows: [...rows.values()], campaigns, actions };
+}
+
+export async function googleStatus(cfg: GoogleAccountConfig, store: DailyStore, accountStatus: string): Promise<AccountReport> {
+  const cid = cfg.id;
+  const w = windows(store.timezone);
+  const label = cfg.label ?? "Conversions";
+  const [campaigns, policy] = await Promise.all([
     gaql(cid, "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.primary_status, campaign.primary_status_reasons, campaign_budget.amount_micros FROM campaign WHERE campaign.status != 'REMOVED'"),
-    gaql(cid, `SELECT campaign.id, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${w.fetch[0]}' AND '${w.fetch[1]}'`),
     gaql(cid, "SELECT campaign.id, ad_group_ad.policy_summary.approval_status FROM ad_group_ad WHERE campaign.status = 'ENABLED' AND ad_group.status = 'ENABLED' AND ad_group_ad.status = 'ENABLED' AND ad_group_ad.policy_summary.approval_status IN ('DISAPPROVED', 'APPROVED_LIMITED')").catch(() => [] as Json[]),
   ]);
-
-  const perCampaign = new Map<string, Map<string, Raw>>();
-  const accountDays = new Map<string, Raw>();
-  for (const r of daily) {
-    const id = String(r.campaign?.id);
-    const date = r.segments?.date as string;
-    const m = r.metrics ?? {};
-    const raw: Raw = {
-      spend: Number(m.costMicros ?? 0) / 1e6,
-      impressions: Number(m.impressions ?? 0),
-      clicks: Number(m.clicks ?? 0),
-      results: Number(m.conversions ?? 0),
-      value: Number(m.conversionsValue ?? 0),
-    };
-    if (!perCampaign.has(id)) perCampaign.set(id, new Map());
-    const days = perCampaign.get(id)!;
-    days.set(date, addRaw(days.get(date) ?? zeroRaw(), raw));
-    accountDays.set(date, addRaw(accountDays.get(date) ?? zeroRaw(), raw));
-  }
 
   const policyCount = new Map<string, { disapproved: number; limited: number }>();
   for (const p of policy) {
     const id = String(p.campaign?.id);
-    const s = p.adGroupAd?.policySummary?.approvalStatus;
     const cur = policyCount.get(id) ?? { disapproved: 0, limited: 0 };
-    if (s === "DISAPPROVED") cur.disapproved++;
+    if (p.adGroupAd?.policySummary?.approvalStatus === "DISAPPROVED") cur.disapproved++;
     else cur.limited++;
     policyCount.set(id, cur);
   }
+
+  const y = byCampaign(store, cfg, w.yesterday, w.yesterday);
+  const l7 = byCampaign(store, cfg, w.last7[0], w.last7[1]);
+  const p7 = byCampaign(store, cfg, w.prev7[0], w.prev7[1]);
 
   const rows: CampaignRow[] = [];
   for (const r of campaigns) {
     const camp = r.campaign ?? {};
     const id = String(camp.id);
-    const days = perCampaign.get(id) ?? new Map<string, Raw>();
-    const l7 = sumWindow(days, w.last7[0], w.last7[1]);
+    const type = CHANNEL[camp.advertisingChannelType] ?? camp.advertisingChannelType ?? "";
+    store.campaigns[id] = { name: camp.name ?? id, type };
+    const last7 = l7.get(id) ?? zeroRaw();
     const off = camp.status !== "ENABLED" || ["ENDED", "REMOVED"].includes(camp.primaryStatus);
-    if (off && l7.spend === 0) continue;
-    if (camp.advertisingChannelType === "LOCAL_SERVICES" && l7.spend === 0) continue; // auto-created placeholder
+    if (off && last7.spend === 0) continue;
+    if (camp.advertisingChannelType === "LOCAL_SERVICES" && last7.spend === 0) continue; // auto-created placeholder
     const notes: string[] = [];
-    const reasons: string[] = (camp.primaryStatusReasons ?? []).filter((r: string) => !IGNORE_REASONS.includes(r));
+    const reasons: string[] = (camp.primaryStatusReasons ?? []).filter((x: string) => !IGNORE_REASONS.includes(x));
     if (["NOT_ELIGIBLE", "LIMITED", "MISCONFIGURED", "PENDING"].includes(camp.primaryStatus) && reasons.length) {
       notes.push(`${titleCase(camp.primaryStatus)}: ${reasons.map(titleCase).join(", ")}`);
     }
@@ -128,12 +153,12 @@ export async function googleAccount(cid: string): Promise<AccountReport> {
       id,
       name: camp.name ?? id,
       status: camp.status === "ENABLED" ? (camp.primaryStatus ?? "ENABLED") : camp.status,
-      type: CHANNEL[camp.advertisingChannelType] ?? camp.advertisingChannelType ?? "",
+      type,
       dailyBudget: r.campaignBudget?.amountMicros ? Number(r.campaignBudget.amountMicros) / 1e6 : null,
-      resultLabel: "Conversions",
-      yesterday: finalize(sumWindow(days, w.yesterday, w.yesterday)),
-      last7: finalize(l7),
-      prev7: finalize(sumWindow(days, w.prev7[0], w.prev7[1])),
+      resultLabel: label,
+      yesterday: finalize(y.get(id) ?? zeroRaw()),
+      last7: finalize(last7),
+      prev7: finalize(p7.get(id) ?? zeroRaw()),
       notes,
     });
   }
@@ -142,18 +167,18 @@ export async function googleAccount(cid: string): Promise<AccountReport> {
   return {
     platform: "google",
     id: cid,
-    name: c.descriptiveName || `Google Ads ${cid.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")}`,
-    currency: c.currencyCode ?? "USD",
-    timezone: tz,
-    status: c.status === "ENABLED" ? "Active" : (c.status ?? "Unknown"),
+    name: store.name,
+    currency: store.currency,
+    timezone: store.timezone,
+    status: accountStatus,
     error: null,
-    resultLabel: "Conversions",
+    resultLabel: label,
     dates: { yesterday: w.yesterday, last7: w.last7, prev7: w.prev7, mtd: w.mtd },
-    mtd: finalize(sumWindow(accountDays, w.mtd[0], w.mtd[1])),
-    yesterday: finalize(sumWindow(accountDays, w.yesterday, w.yesterday)),
-    last7: finalize(sumWindow(accountDays, w.last7[0], w.last7[1])),
-    prev7: finalize(sumWindow(accountDays, w.prev7[0], w.prev7[1])),
-    series: seriesFrom(accountDays, w.series[0], w.series[1]),
+    mtd: finalize(sumRange(store, cfg, w.mtd[0], w.mtd[1])),
+    yesterday: finalize(sumRange(store, cfg, w.yesterday, w.yesterday)),
+    last7: finalize(sumRange(store, cfg, w.last7[0], w.last7[1])),
+    prev7: finalize(sumRange(store, cfg, w.prev7[0], w.prev7[1])),
+    series: dailySeries(store, cfg, w.series[0], w.series[1]),
     campaigns: rows,
     flags: [],
   };

@@ -1,16 +1,26 @@
 import { notFound, redirect } from "next/navigation";
-import AccountCard from "@/components/AccountCard";
-import { GoogleAdsLogo, MetaLogo } from "@/components/Icons";
+import Alerts from "@/components/Alerts";
+import DateControl from "@/components/DateControl";
+import PlatformSection from "@/components/PlatformSection";
 import RefreshButton from "@/components/RefreshButton";
 import Shell from "@/components/Shell";
 import StatusBanner, { lastUpdated } from "@/components/StatusBanner";
 import { currentViewer } from "@/lib/access";
+import { rangeQuery, resolveRange } from "@/lib/range";
 import { latestSnapshot } from "@/lib/refresh";
+import { accountView } from "@/lib/view";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClientPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function ClientPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { slug } = await params;
+  const range = resolveRange(await searchParams);
   const viewer = await currentViewer();
   if (!viewer) redirect("/login");
   const cfg = viewer.clients.find((c) => c.slug === slug);
@@ -18,38 +28,31 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
 
   const snapshot = await latestSnapshot();
   const report = snapshot?.clients.find((c) => c.slug === slug);
+  const [meta, google] = report
+    ? await Promise.all([Promise.all(report.meta.map((a) => accountView(a, range))), Promise.all(report.google.map((a) => accountView(a, range)))])
+    : [[], []];
 
   return (
-    <Shell viewer={viewer} snapshot={snapshot} active={slug} title={cfg.name}>
+    <Shell viewer={viewer} snapshot={snapshot} active={slug} title={cfg.name} qs={rangeQuery(range)}>
       <div className="page-head">
         <div>
           <h1>{cfg.name}</h1>
           <p>{lastUpdated(snapshot)}</p>
         </div>
-        <RefreshButton />
+        <div className="head-actions">
+          <DateControl preset={range.preset} from={range.from} to={range.to} compare={range.compare} label={range.label} compareLabel={range.compareLabel} />
+          <RefreshButton />
+        </div>
       </div>
-      <StatusBanner snapshot={snapshot} isOwner={viewer.isOwner} />
+      <StatusBanner snapshot={snapshot} isOwner={viewer.isOwner || !!viewer.open} />
 
       {!report ? (
-        <div className="card empty">No data yet. Click Refresh to pull this client's numbers.</div>
+        <div className="card empty">No data yet. Click Refresh to pull this client&apos;s numbers.</div>
       ) : (
         <>
-          <section className="platform">
-            <div className="platform-head"><MetaLogo /><h2>Meta Ads</h2></div>
-            {report.meta.length === 0 ? (
-              <div className="card empty">No Meta ad account connected for this client.</div>
-            ) : (
-              report.meta.map((a) => <AccountCard key={a.id} a={a} />)
-            )}
-          </section>
-          <section className="platform">
-            <div className="platform-head"><GoogleAdsLogo /><h2>Google Ads</h2></div>
-            {report.google.length === 0 ? (
-              <div className="card empty">No Google Ads account connected for this client.</div>
-            ) : (
-              report.google.map((a) => <AccountCard key={a.id} a={a} />)
-            )}
-          </section>
+          <Alerts accounts={[...report.meta, ...report.google]} />
+          <PlatformSection platform="meta" accounts={meta} range={range} />
+          <PlatformSection platform="google" accounts={google} range={range} />
         </>
       )}
     </Shell>

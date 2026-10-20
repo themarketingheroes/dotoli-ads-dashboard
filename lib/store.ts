@@ -10,13 +10,13 @@ function stamp(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-export async function writeJson(prefix: string, data: unknown): Promise<void> {
+export async function writeJson(prefix: string, data: unknown, keep = KEEP): Promise<void> {
   await put(`${prefix}/${stamp()}.json`, JSON.stringify(data), {
     access: "private",
     contentType: "application/json",
     addRandomSuffix: false,
   });
-  await prune(prefix);
+  await prune(prefix, keep);
 }
 
 export async function readLatestJson<T>(prefix: string): Promise<T | null> {
@@ -40,8 +40,8 @@ async function listAll(prefix: string) {
   return out;
 }
 
-async function prune(prefix: string) {
+async function prune(prefix: string, keep: number) {
   const blobs = (await listAll(prefix)).sort((a, b) => (a.pathname < b.pathname ? 1 : -1));
-  const old = blobs.slice(KEEP).map((b) => b.url);
+  const old = blobs.slice(keep).map((b) => b.url);
   if (old.length) await del(old);
 }

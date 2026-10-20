@@ -18,18 +18,20 @@ export default function Shell({
   snapshot,
   active,
   title,
+  qs = "",
   children,
 }: {
   viewer: Viewer;
   snapshot: Snapshot | null;
   active?: string;
   title?: string;
+  qs?: string; // keeps the selected date range when moving between pages
   children: React.ReactNode;
 }) {
   return (
     <>
       <header className="topbar">
-        <Link href="/" className="brand">
+        <Link href={`/${qs}`} className="brand">
           <Logo />
           <span>Ads Dashboard</span>
         </Link>
@@ -51,12 +53,12 @@ export default function Shell({
       </header>
       <div className="layout">
         <nav className="sidebar" aria-label="Clients">
-          <Link href="/" className={`navlink${!active ? " active" : ""}`}>Overview</Link>
+          <Link href={`/${qs}`} className={`navlink${!active ? " active" : ""}`}>Overview</Link>
           <h6>Clients</h6>
           {viewer.clients.map((c) => {
             const h = health(snapshot, c.slug);
             return (
-              <Link key={c.slug} href={`/c/${c.slug}`} className={`navlink${active === c.slug ? " active" : ""}`}>
+              <Link key={c.slug} href={`/c/${c.slug}${qs}`} className={`navlink${active === c.slug ? " active" : ""}`}>
                 <span>{c.name}</span>
                 {h && <span className={`navdot ${h}`} title={h === "ok" ? "No issues" : `${h} flags`} />}
               </Link>
@@ -70,7 +72,7 @@ export default function Shell({
           )}
         </nav>
         <main className="main">
-          <MobileNav clients={viewer.clients.map((c) => ({ slug: c.slug, name: c.name }))} active={active} isOwner={viewer.isOwner} />
+          <MobileNav qs={qs} clients={viewer.clients.map((c) => ({ slug: c.slug, name: c.name }))} active={active} isOwner={viewer.isOwner} />
           {children}
         </main>
       </div>

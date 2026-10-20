@@ -40,6 +40,7 @@ export interface Flag {
   text: string;
 }
 
+// Latest status of one ad account (alerts, campaign statuses, budgets).
 export interface AccountReport {
   platform: Platform;
   id: string;
@@ -50,7 +51,7 @@ export interface AccountReport {
   error: string | null;
   resultLabel: string;
   dates: { yesterday: string; last7: [string, string]; prev7: [string, string]; mtd?: [string, string] };
-  mtd?: Metrics; // month to date (optional so older snapshots still render)
+  mtd?: Metrics;
   yesterday: Metrics;
   last7: Metrics;
   prev7: Metrics;
@@ -74,15 +75,54 @@ export interface Snapshot {
   clients: ClientReport[];
 }
 
+// Which Google conversion actions count as results. Matches action names or
+// categories (e.g. "SIGNUP"). include wins over exclude.
+export interface ConversionRule {
+  include?: string[];
+  exclude?: string[];
+  label?: string;
+}
+
+export interface GoogleAccountConfig extends ConversionRule {
+  id: string;
+}
+
 export interface ClientConfig {
   slug: string;
   name: string;
   meta: string[];
-  google: string[];
+  google: GoogleAccountConfig[];
 }
 
 export interface AccessEntry {
   email: string;
   clients: "all" | string[];
   addedAt: string;
+}
+
+// ---------- Daily history (powers any date range) ----------
+
+export interface DailyRow {
+  d: string; // date
+  c: string; // campaign id
+  s: number; // spend
+  i: number; // impressions
+  k: number; // clicks
+  r: number; // results (Meta); unused for Google, which uses a
+  v: number; // value (Meta); unused for Google
+  a?: Record<string, [number, number]>; // Google: conversion action -> [conversions, value]
+}
+
+export interface DailyStore {
+  platform: Platform;
+  id: string;
+  name: string;
+  currency: string;
+  timezone: string;
+  updatedAt: string;
+  from: string;
+  to: string;
+  campaigns: Record<string, { name: string; type: string }>;
+  actions?: Record<string, string>; // Google: action name -> category
+  rows: DailyRow[];
 }

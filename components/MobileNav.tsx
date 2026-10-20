@@ -2,12 +2,12 @@
 
 import { useRouter } from "next/navigation";
 
-export default function MobileNav({ clients, active, isOwner }: { clients: { slug: string; name: string }[]; active?: string; isOwner: boolean }) {
+export default function MobileNav({ clients, active, isOwner, qs = "" }: { clients: { slug: string; name: string }[]; active?: string; isOwner: boolean; qs?: string }) {
   const router = useRouter();
   const value = active === "__access" ? "/access" : active ? `/c/${active}` : "/";
   return (
     <div className="mobile-nav">
-      <select className="input" value={value} onChange={(e) => router.push(e.target.value)} aria-label="Go to client">
+      <select className="input" value={value} onChange={(e) => router.push(e.target.value === "/access" ? "/access" : `${e.target.value}${qs}`)} aria-label="Go to client">
         <option value="/">Overview</option>
         {clients.map((c) => (
           <option key={c.slug} value={`/c/${c.slug}`}>{c.name}</option>

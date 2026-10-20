@@ -1,9 +1,10 @@
 import { getClients } from "./config";
 import { flagAccount } from "./flags";
-import { googleAccount } from "./google";
-import { metaAccount, metaTokenExpiry } from "./meta";
+import { googleStatus } from "./google";
+import { saveStore, updateStore } from "./history";
+import { metaStatus, metaTokenExpiry } from "./meta";
 import { readLatestJson, writeJson } from "./store";
-import type { AccountReport, Platform, Snapshot } from "./types";
+import type { AccountReport, GoogleAccountConfig, Platform, Snapshot } from "./types";
 
 export const SNAPSHOT_PREFIX = "snapshots";
 
@@ -21,9 +22,15 @@ function failed(platform: Platform, id: string, err: unknown): AccountReport {
   };
 }
 
-async function safe(platform: Platform, id: string): Promise<AccountReport> {
+async function refreshAccount(platform: Platform, id: string, cfg?: GoogleAccountConfig): Promise<AccountReport> {
   try {
-    const report = platform === "meta" ? await metaAccount(id) : await googleAccount(id);
+    const { store, status } = await updateStore(platform, id);
+    const report =
+      platform === "meta"
+        ? await metaStatus(id, store, Number(status))
+        : await googleStatus(cfg ?? { id }, store, String(status));
+    if (!report.name) report.name = id;
+    await saveStore(store); // after status, which fills in current campaign names
     report.flags = flagAccount(report);
     return report;
   } catch (e) {
@@ -42,8 +49,8 @@ export async function runRefresh(trigger: "cron" | "manual"): Promise<Snapshot> 
       clients.map(async (c) => ({
         slug: c.slug,
         name: c.name,
-        meta: await Promise.all(c.meta.map((id) => safe("meta", id))),
-        google: await Promise.all(c.google.map((id) => safe("google", id))),
+        meta: await Promise.all(c.meta.map((id) => refreshAccount("meta", id))),
+        google: await Promise.all(c.google.map((g) => refreshAccount("google", g.id, g))),
       })),
     ),
   ]);
