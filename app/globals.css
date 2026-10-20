@@ -225,7 +225,6 @@ td .sub { display: block; color: var(--muted); font-size: 11px; margin-top: 2px;
 
 .convs { margin-top: 12px; }
 .check { color: var(--good); }
-.cross { color: var(--muted); text-decoration: line-through; }
 
 /* ---------- Overview ---------- */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }

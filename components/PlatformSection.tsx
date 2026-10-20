@@ -104,7 +104,7 @@ export default function PlatformSection({ platform, accounts, range }: { platfor
                       <tbody>
                         {a.actions.map((x) => (
                           <tr key={x.name}>
-                            <td className={x.counted ? "" : "cross"}>{x.name}</td>
+                            <td>{x.name}</td>
                             <td className="muted">{titleCase(x.category)}</td>
                             <td className="num">{num(x.conversions, 1)}</td>
                             <td>{x.counted ? <span className="badge green">Counted</span> : <span className="badge">Excluded</span>}</td>
