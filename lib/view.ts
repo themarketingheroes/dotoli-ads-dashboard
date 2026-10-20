@@ -1,5 +1,6 @@
 import { actionBreakdown, ActionLine, byCampaign, dailySeries, sumRange } from "./aggregate";
 import { googleRule } from "./config";
+import { addDays } from "./dates";
 import { loadStore } from "./history";
 import { labelFor } from "./meta";
 import { finalize, zeroRaw } from "./metrics";
@@ -90,7 +91,8 @@ export async function accountView(report: AccountReport, range: Range, withDetai
           prev: hasCompare ? finalize(p ?? zeroRaw()) : null,
         };
       })
-      .filter((c) => c.cur.spend > 0 || c.cur.results > 0 || c.status !== "OFF")
+      // Live campaigns with no activity only matter when the range reaches the present.
+      .filter((c) => c.cur.spend > 0 || c.cur.results > 0 || (c.status !== "OFF" && range.to >= addDays(store.to, -2)))
       .sort((a, b) => b.cur.spend - a.cur.spend);
   }
 

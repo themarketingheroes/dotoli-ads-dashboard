@@ -34,7 +34,8 @@ function kpis(a: AccountView) {
     <Kpi key="res" label={a.resultLabel} value={num(c.results, 1)} now={c.results} before={b((x) => x.results)} good="higher" prevText={prevOf((x) => x.results, (v) => num(v ?? 0, 1))} />,
     <Kpi key="cpr" label="Cost per result" value={m(c.costPerResult)} now={c.costPerResult} before={b((x) => x.costPerResult)} good="lower" prevText={prevOf((x) => x.costPerResult, m)} />,
   ];
-  if (c.value > 0 || (p && p.value > 0)) {
+  // ROAS only means something for sales accounts; lead-gen values are placeholders.
+  if (a.resultLabel === "Purchases" && c.value > 0) {
     tiles.push(<Kpi key="roas" label="ROAS" value={c.roas === null ? "–" : `${c.roas.toFixed(2)}x`} now={c.roas} before={b((x) => x.roas)} good="higher" prevText={prevOf((x) => x.roas, (v) => (v === null ? "–" : `${v.toFixed(2)}x`))} />);
   } else {
     tiles.push(<Kpi key="clicks" label="Clicks" value={num(c.clicks)} now={c.clicks} before={b((x) => x.clicks)} good="higher" prevText={prevOf((x) => x.clicks, (v) => num(v ?? 0))} />);
