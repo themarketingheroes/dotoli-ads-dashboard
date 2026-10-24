@@ -5,7 +5,7 @@ import { AlertIcon } from "./Icons";
 export function lastUpdated(snapshot: Snapshot | null): string {
   if (!snapshot) return "Not refreshed yet";
   const at = new Date(snapshot.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
-  return `Updated ${relativeTime(snapshot.generatedAt)} (${at} ET, ${snapshot.trigger === "cron" ? "daily run" : "manual refresh"}). Auto-refresh daily at 10:00 AM EST.`;
+  return `Updated ${relativeTime(snapshot.generatedAt)} (${at} ET, ${snapshot.trigger === "cron" ? "daily run" : "manual refresh"}). Auto-refresh twice daily, 10:00 AM and 10:00 PM EST.`;
 }
 
 export default function StatusBanner({ snapshot, isOwner }: { snapshot: Snapshot | null; isOwner: boolean }) {
