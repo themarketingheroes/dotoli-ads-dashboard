@@ -109,6 +109,59 @@ export async function googleHistory(cid: string, from: string, to: string): Prom
   return { rows: [...rows.values()], campaigns, actions };
 }
 
+// Script-fed accounts: same report, built only from what the Google Ads Script pushed.
+export function googleStatusFromStore(cfg: GoogleAccountConfig, store: DailyStore): AccountReport {
+  const w = windows(store.timezone);
+  const label = cfg.label ?? "Conversions";
+  const y = byCampaign(store, cfg, w.yesterday, w.yesterday);
+  const l7 = byCampaign(store, cfg, w.last7[0], w.last7[1]);
+  const p7 = byCampaign(store, cfg, w.prev7[0], w.prev7[1]);
+  const rows: CampaignRow[] = [];
+  for (const c of store.live ?? []) {
+    const last7 = l7.get(c.id) ?? zeroRaw();
+    const off = c.status !== "ENABLED" || ["ENDED", "REMOVED"].includes(c.primaryStatus);
+    if (off && last7.spend === 0) continue;
+    if (c.channel === "LOCAL_SERVICES" && last7.spend === 0) continue;
+    const notes: string[] = [];
+    const reasons = (c.reasons || "").split(",").map((x) => x.trim()).filter((x) => x && !IGNORE_REASONS.includes(x));
+    if (["NOT_ELIGIBLE", "LIMITED", "MISCONFIGURED", "PENDING"].includes(c.primaryStatus) && reasons.length) {
+      notes.push(`${titleCase(c.primaryStatus)}: ${reasons.map(titleCase).join(", ")}`);
+    }
+    rows.push({
+      id: c.id,
+      name: c.name,
+      status: c.status === "ENABLED" ? (c.primaryStatus || "ENABLED") : c.status,
+      type: CHANNEL[c.channel] ?? c.channel,
+      dailyBudget: c.budget,
+      resultLabel: label,
+      yesterday: finalize(y.get(c.id) ?? zeroRaw()),
+      last7: finalize(last7),
+      prev7: finalize(p7.get(c.id) ?? zeroRaw()),
+      notes,
+    });
+  }
+  rows.sort((a, b) => b.last7.spend - a.last7.spend);
+  const stale = store.updatedAt && Date.now() - Date.parse(store.updatedAt) > 36 * 3600 * 1000;
+  return {
+    platform: "google",
+    id: cfg.id,
+    name: store.name,
+    currency: store.currency,
+    timezone: store.timezone,
+    status: "Active",
+    error: null,
+    resultLabel: label,
+    dates: { yesterday: w.yesterday, last7: w.last7, prev7: w.prev7, mtd: w.mtd },
+    mtd: finalize(sumRange(store, cfg, w.mtd[0], w.mtd[1])),
+    yesterday: finalize(sumRange(store, cfg, w.yesterday, w.yesterday)),
+    last7: finalize(sumRange(store, cfg, w.last7[0], w.last7[1])),
+    prev7: finalize(sumRange(store, cfg, w.prev7[0], w.prev7[1])),
+    series: dailySeries(store, cfg, w.series[0], w.series[1]),
+    campaigns: rows,
+    flags: stale ? [{ level: "warning", text: `Google Ads data last arrived ${new Date(store.updatedAt).toUTCString()}. Check the Google Ads Script is still scheduled daily.` }] : [],
+  };
+}
+
 export async function googleStatus(cfg: GoogleAccountConfig, store: DailyStore, accountStatus: string): Promise<AccountReport> {
   const cid = cfg.id;
   const w = windows(store.timezone);

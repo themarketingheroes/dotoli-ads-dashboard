@@ -1,10 +1,10 @@
 import { getClients } from "./config";
 import { flagAccount } from "./flags";
-import { googleStatus } from "./google";
+import { googleStatus, googleStatusFromStore } from "./google";
 import { saveStore, updateStore } from "./history";
 import { metaStatus, metaTokenExpiry } from "./meta";
 import { readLatestJson, writeJson } from "./store";
-import type { AccountReport, GoogleAccountConfig, Platform, Snapshot } from "./types";
+import type { AccountReport, DailyStore, GoogleAccountConfig, Platform, Snapshot } from "./types";
 
 export const SNAPSHOT_PREFIX = "snapshots";
 
@@ -24,6 +24,13 @@ function failed(platform: Platform, id: string, err: unknown): AccountReport {
 
 async function refreshAccount(platform: Platform, id: string, cfg?: GoogleAccountConfig): Promise<AccountReport> {
   try {
+    if (platform === "google" && cfg?.source === "script") {
+      const store = await readLatestJson<DailyStore>(`daily/google-${id}`);
+      if (!store) throw new Error("Waiting for the first data push from the Google Ads Script");
+      const report = googleStatusFromStore(cfg, store);
+      report.flags = [...report.flags, ...flagAccount(report)];
+      return report;
+    }
     const { store, status } = await updateStore(platform, id);
     const report =
       platform === "meta"

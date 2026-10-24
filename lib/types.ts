@@ -85,6 +85,18 @@ export interface ConversionRule {
 
 export interface GoogleAccountConfig extends ConversionRule {
   id: string;
+  // "script": data is pushed by a Google Ads Script to /api/ingest (for logins that block API apps)
+  source?: "api" | "script";
+}
+
+export interface LiveCampaign {
+  id: string;
+  name: string;
+  status: string;
+  primaryStatus: string;
+  reasons: string;
+  channel: string;
+  budget: number | null;
 }
 
 export interface ClientConfig {
@@ -124,5 +136,6 @@ export interface DailyStore {
   to: string;
   campaigns: Record<string, { name: string; type: string }>;
   actions?: Record<string, string>; // Google: action name -> category
+  live?: LiveCampaign[]; // script-fed accounts: campaign settings from the latest push
   rows: DailyRow[];
 }
