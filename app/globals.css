@@ -311,3 +311,69 @@ td .sub { display: block; color: var(--muted); font-size: 11px; margin-top: 2px;
   .dc-pop { right: auto; left: 0; width: min(320px, calc(100vw - 32px)); }
   .chart-wrap svg { height: 200px; }
 }
+
+/* ---------- Togas theme (DASHBOARD_THEME=togas) ---------- */
+/* togas.com: black and off-white, warm greys, serif display type, Noto Sans body. */
+.theme-togas {
+  --bg: #ffffff;
+  --page: #f7f6f3;
+  --bg-3: #efeee9;
+  --hover: #f3f2ee;
+  --border: #e6e4de;
+  --border-2: #d4d2cb;
+  --fg: #000000;
+  --fg-2: #4a4945;
+  --muted: #8c8a84;
+  --blue: #000000;
+  --chart: #111111;
+  --chart-fill: rgba(17, 17, 17, 0.06);
+  --compare: #b4b4b1;
+  --grid: #ecebe6;
+  --radius: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  .theme-togas {
+    --bg: #0d0d0d;
+    --page: #000000;
+    --bg-3: #1c1c1b;
+    --hover: #161615;
+    --border: #262625;
+    --border-2: #34342f;
+    --fg: #fcfcfc;
+    --fg-2: #c4c4c4;
+    --muted: #8c8a84;
+    --blue: #fcfcfc;
+    --chart: #fcfcfc;
+    --chart-fill: rgba(252, 252, 252, 0.08);
+    --compare: #6d6b66;
+    --grid: #232322;
+  }
+}
+.theme-togas body { font-family: var(--font-brand-sans), system-ui, sans-serif; }
+.theme-togas .topbar { background: #000; color: #fcfcfc; border-bottom-color: #000; backdrop-filter: none; }
+.theme-togas .topbar .btn { background: transparent; color: #fcfcfc; border-color: #444; }
+.theme-togas .topbar .crumb { color: #fcfcfc; }
+.theme-togas .topbar .crumb-sep { color: #555; }
+.theme-togas .brand { gap: 14px; color: #fcfcfc; }
+.theme-togas .brand-sub { font-family: var(--font-brand-sans), sans-serif; font-weight: 400; font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: #c4c4c4; padding-left: 14px; border-left: 1px solid #444; }
+.theme-togas .page-head h1,
+.theme-togas .platform-head h2,
+.theme-togas .cc-head h3,
+.theme-togas .acct-card h3,
+.theme-togas .table-head h3,
+.theme-togas .funnel-head h3 { font-family: var(--font-brand-serif), Georgia, serif; font-weight: 500; letter-spacing: 0; }
+.theme-togas .page-head h1 { font-size: 40px; line-height: 1.05; }
+.theme-togas .platform-head h2 { font-size: 24px; }
+.theme-togas .cc-head h3, .theme-togas .acct-card h3 { font-size: 21px !important; }
+.theme-togas .sidebar h6, .theme-togas .kpi .label, .theme-togas .fstep .label, .theme-togas .acct-card .stats .l, .theme-togas th {
+  text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px;
+}
+.theme-togas .btn.primary { background: #000; color: #fcfcfc; border-color: #000; border-radius: 2px; }
+.theme-togas .btn, .theme-togas .dc-btn, .theme-togas .input { border-radius: 2px; }
+.theme-togas .otab { text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; padding: 12px 16px; }
+.theme-togas .otab.on { border-bottom-width: 1px; }
+.theme-togas .navlink.active { background: transparent; box-shadow: inset 2px 0 0 var(--fg); border-radius: 0; }
+.theme-togas .share i, .theme-togas .fbar i { background: var(--fg); }
+@media (prefers-color-scheme: dark) {
+  .theme-togas .btn.primary { background: #fcfcfc; color: #000; border-color: #fcfcfc; }
+}

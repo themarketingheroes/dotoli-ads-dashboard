@@ -53,3 +53,8 @@ export function authEnabled(): boolean {
 export function ownerEmail(): string {
   return (process.env.OWNER_EMAIL ?? "").trim().toLowerCase();
 }
+
+// Visual theme: "togas" switches on the Togas brand (logo, palette, serif headings).
+export function theme(): "default" | "togas" {
+  return process.env.DASHBOARD_THEME === "togas" ? "togas" : "default";
+}

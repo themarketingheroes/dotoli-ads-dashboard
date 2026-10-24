@@ -3,6 +3,8 @@ import type { Viewer } from "@/lib/access";
 import type { Snapshot } from "@/lib/types";
 import { Logo } from "./Icons";
 import MobileNav from "./MobileNav";
+import TogasLogo from "./TogasLogo";
+import { theme } from "@/lib/config";
 
 function health(snapshot: Snapshot | null, slug: string): "critical" | "warning" | "ok" | null {
   const c = snapshot?.clients.find((x) => x.slug === slug);
@@ -32,8 +34,17 @@ export default function Shell({
     <>
       <header className="topbar">
         <Link href={`/${qs}`} className="brand">
-          <Logo />
-          <span>Ads Dashboard</span>
+          {theme() === "togas" ? (
+            <>
+              <TogasLogo height={20} />
+              <span className="brand-sub">Ads Performance</span>
+            </>
+          ) : (
+            <>
+              <Logo />
+              <span>Ads Dashboard</span>
+            </>
+          )}
         </Link>
         {title && (
           <>
