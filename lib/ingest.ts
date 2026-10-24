@@ -1,4 +1,4 @@
-import { saveStore } from "./history";
+import { saveStore, STORE_VERSION } from "./history";
 import type { DailyRow, DailyStore, LiveCampaign } from "./types";
 
 // One POST per Google Ads account from the Google Ads Script. Each push carries the
@@ -7,7 +7,7 @@ export interface IngestAccount {
   account: { id: string; name: string; currency: string; timezone: string };
   campaigns?: LiveCampaign[];
   rows?: [string, string, string, string, number, number, number][]; // date, campaign id, name, channel, cost, impressions, clicks
-  conv?: [string, string, string, string, number, number][]; // date, campaign id, action, category, conversions, value
+  conv?: [string, string, string, string, number, number, number?][]; // date, campaign id, action, category, conversions, value, all conversions
 }
 
 export async function ingestAccount(p: IngestAccount): Promise<{ id: string; rows: number; from: string; to: string }> {
@@ -22,11 +22,11 @@ export async function ingestAccount(p: IngestAccount): Promise<{ id: string; row
     campaigns[String(c)] = { name, type: channel };
     byKey.set(`${d}|${c}`, { d, c: String(c), s: Number(s) || 0, i: Number(i) || 0, k: Number(k) || 0, r: 0, v: 0, a: {} });
   }
-  for (const [d, c, action, category, n, v] of p.conv ?? []) {
+  for (const [d, c, action, category, n, v, all] of p.conv ?? []) {
     actions[action] = category;
     const row = byKey.get(`${d}|${c}`) ?? { d, c: String(c), s: 0, i: 0, k: 0, r: 0, v: 0, a: {} };
-    const was = row.a![action] ?? [0, 0];
-    row.a![action] = [was[0] + (Number(n) || 0), was[1] + (Number(v) || 0)];
+    const was = row.a![action] ?? [0, 0, 0];
+    row.a![action] = [was[0] + (Number(n) || 0), was[1] + (Number(v) || 0), (was[2] ?? 0) + (Number(all ?? n) || 0)];
     byKey.set(`${d}|${c}`, row);
   }
   for (const c of p.campaigns ?? []) campaigns[String(c.id)] = { name: c.name, type: c.channel };
@@ -39,6 +39,7 @@ export async function ingestAccount(p: IngestAccount): Promise<{ id: string; row
     currency: p.account.currency || "USD",
     timezone: p.account.timezone || "America/New_York",
     updatedAt: new Date().toISOString(),
+    version: STORE_VERSION,
     from: rows[0]?.d ?? "",
     to: rows[rows.length - 1]?.d ?? "",
     campaigns,

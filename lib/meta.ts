@@ -96,16 +96,31 @@ export async function metaInfo(acct: string) {
   return { name: info.name ?? acct, currency: info.currency ?? "USD", timezone: info.timezone_name || "America/New_York", status: Number(info.account_status) };
 }
 
+// Action types worth keeping per day (funnel + lead-type events); keeps the store small.
+const KEEP_ACTION = /(cart|checkout|purchase|custom|lead|view_content|payment|registration|contact|schedule|application|subscribe|quick|search)/;
+
 // Daily campaign rows for [from, to], fetched in 90-day chunks.
-export async function metaHistory(acct: string, from: string, to: string): Promise<{ rows: DailyRow[]; campaigns: DailyStore["campaigns"] }> {
+export async function metaHistory(acct: string, from: string, to: string): Promise<{ rows: DailyRow[]; campaigns: DailyStore["campaigns"]; actions: Record<string, string> }> {
   const rows: DailyRow[] = [];
   const campaigns: DailyStore["campaigns"] = {};
+  const actions: Record<string, string> = {};
+  try {
+    for (const cc of await graphAll(`act_${acct}/customconversions`, { fields: "id,name" })) {
+      actions[`offsite_conversion.custom.${cc.id}`] = cc.name;
+    }
+  } catch {
+    /* custom conversion names are optional */
+  }
   for (let start = from; start <= to; start = addDays(start, 90)) {
     const end = addDays(start, 89) < to ? addDays(start, 89) : to;
     for (const r of await insightsChunk(acct, start, end)) {
       const objective = r.objective ?? "";
       campaigns[String(r.campaign_id)] = { name: r.campaign_name ?? String(r.campaign_id), type: objective };
+      const a: Record<string, number[]> = {};
+      for (const x of (r.actions ?? []) as Json[]) if (KEEP_ACTION.test(x.action_type)) a[x.action_type] = [Number(x.value) || 0, 0];
+      for (const x of (r.action_values ?? []) as Json[]) if (KEEP_ACTION.test(x.action_type)) (a[x.action_type] ??= [0, 0])[1] = Number(x.value) || 0;
       rows.push({
+        a,
         d: r.date_start,
         c: String(r.campaign_id),
         s: Number(r.spend) || 0,
@@ -116,7 +131,7 @@ export async function metaHistory(acct: string, from: string, to: string): Promi
       });
     }
   }
-  return { rows, campaigns };
+  return { rows, campaigns, actions };
 }
 
 const ACTIVE = ["ACTIVE", "WITH_ISSUES", "IN_PROCESS", "PENDING_BILLING_INFO"];

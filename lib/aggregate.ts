@@ -11,17 +11,77 @@ export function counts(action: string, category: string | undefined, rule: Conve
   return !hit(rule.exclude ?? DEFAULT_EXCLUDE);
 }
 
+// ---------- E-commerce funnel ----------
+// Meta: action types in priority order (first one present wins, so Meta's
+// overlapping omni/pixel types are never double counted).
+// Google: conversion action names or categories (summed). "~text" = name contains text.
+export interface FunnelStep {
+  key: string;
+  label: string;
+  meta: string[];
+  google: string[];
+}
+
+export const ECOM_FUNNEL: FunnelStep[] = [
+  { key: "quick", label: "Quick Shop", meta: ["~quick"], google: ["~quick"] },
+  { key: "atc", label: "Add to cart", meta: ["omni_add_to_cart", "add_to_cart", "offsite_conversion.fb_pixel_add_to_cart"], google: ["ADD_TO_CART"] },
+  { key: "checkout", label: "Checkouts", meta: ["omni_initiated_checkout", "initiate_checkout", "offsite_conversion.fb_pixel_initiate_checkout"], google: ["BEGIN_CHECKOUT"] },
+  { key: "purchase", label: "Purchases", meta: ["omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase"], google: ["PURCHASE"] },
+];
+
+function stepFromRow(row: DailyRow, store: DailyStore, step: FunnelStep): [number, number] {
+  const a = row.a;
+  if (!a) return [0, 0];
+  if (store.platform === "meta") {
+    let n = 0;
+    let v = 0;
+    for (const m of step.meta) {
+      if (m.startsWith("~")) {
+        const needle = m.slice(1).toLowerCase();
+        for (const [type, x] of Object.entries(a)) {
+          const label = (store.actions?.[type] ?? type).toLowerCase();
+          if (type.toLowerCase().includes(needle) || label.includes(needle)) { n += x[0] ?? 0; v += x[1] ?? 0; }
+        }
+        if (n > 0) return [n, v];
+      } else if (a[m]) {
+        return [a[m][0] ?? 0, a[m][1] ?? 0];
+      }
+    }
+    return [n, v];
+  }
+  // Google: primary conversions when the action is primary, otherwise all conversions.
+  let primary = 0, primaryV = 0, all = 0, allV = 0;
+  for (const [name, x] of Object.entries(a)) {
+    const cat = (store.actions?.[name] ?? "").toLowerCase();
+    const lname = name.toLowerCase();
+    const match = step.google.some((g) => (g.startsWith("~") ? lname.includes(g.slice(1).toLowerCase()) : g.toLowerCase() === cat || g.toLowerCase() === lname));
+    if (!match) continue;
+    primary += x[0] ?? 0;
+    primaryV += x[1] ?? 0;
+    all += x[2] ?? x[0] ?? 0;
+    allV += x[1] ?? 0;
+  }
+  return primary > 0 ? [primary, primaryV] : [all, allV];
+}
+
+const PURCHASE = ECOM_FUNNEL.find((s) => s.key === "purchase")!;
+
 function rowRaw(row: DailyRow, store: DailyStore, rule: ConversionRule): Raw {
-  if (store.platform === "meta" || !row.a) return { spend: row.s, impressions: row.i, clicks: row.k, results: row.r, value: row.v };
+  const base = { spend: row.s, impressions: row.i, clicks: row.k };
+  if (rule.ecommerce) {
+    const [n, v] = stepFromRow(row, store, PURCHASE);
+    return { ...base, results: n, value: v };
+  }
+  if (store.platform === "meta" || !row.a) return { ...base, results: row.r, value: row.v };
   let results = 0;
   let value = 0;
-  for (const [name, [conv, val]] of Object.entries(row.a)) {
+  for (const [name, x] of Object.entries(row.a)) {
     if (counts(name, store.actions?.[name], rule)) {
-      results += conv;
-      value += val;
+      results += x[0] ?? 0;
+      value += x[1] ?? 0;
     }
   }
-  return { spend: row.s, impressions: row.i, clicks: row.k, results, value };
+  return { ...base, results, value };
 }
 
 export function sumRange(store: DailyStore, rule: ConversionRule, from: string, to: string): Raw {
@@ -39,6 +99,25 @@ export function byCampaign(store: DailyStore, rule: ConversionRule, from: string
   return out;
 }
 
+export type FunnelTotals = Record<string, [number, number]>; // step key -> [count, value]
+
+export function funnelTotals(store: DailyStore, from: string, to: string): { account: FunnelTotals; byCampaign: Map<string, FunnelTotals> } {
+  const account: FunnelTotals = {};
+  const camp = new Map<string, FunnelTotals>();
+  for (const s of ECOM_FUNNEL) account[s.key] = [0, 0];
+  for (const row of store.rows) {
+    if (row.d < from || row.d > to || !row.a) continue;
+    const c = camp.get(row.c) ?? Object.fromEntries(ECOM_FUNNEL.map((s) => [s.key, [0, 0]])) as FunnelTotals;
+    for (const s of ECOM_FUNNEL) {
+      const [n, v] = stepFromRow(row, store, s);
+      account[s.key][0] += n; account[s.key][1] += v;
+      c[s.key][0] += n; c[s.key][1] += v;
+    }
+    camp.set(row.c, c);
+  }
+  return { account, byCampaign: camp };
+}
+
 export function dailySeries(store: DailyStore, rule: ConversionRule, from: string, to: string): DayPoint[] {
   const byDay = new Map<string, Raw>();
   for (const row of store.rows) {
@@ -51,7 +130,7 @@ export function dailySeries(store: DailyStore, rule: ConversionRule, from: strin
   while (d <= end) {
     const key = d.toISOString().slice(0, 10);
     const r = byDay.get(key) ?? zeroRaw();
-    out.push({ date: key, spend: round(r.spend), results: round(r.results), clicks: r.clicks, impressions: r.impressions });
+    out.push({ date: key, spend: round(r.spend), results: round(r.results), clicks: r.clicks, impressions: r.impressions, value: round(r.value) });
     d.setUTCDate(d.getUTCDate() + 1);
   }
   return out;
@@ -62,16 +141,27 @@ export interface ActionLine {
   category: string;
   conversions: number;
   counted: boolean;
+  step?: string; // e-commerce: which funnel step this action feeds
+}
+
+function googleStepFor(name: string, category: string): string | undefined {
+  const lname = name.toLowerCase();
+  const cat = category.toLowerCase();
+  return ECOM_FUNNEL.find((s) => s.google.some((g) => (g.startsWith("~") ? lname.includes(g.slice(1).toLowerCase()) : g.toLowerCase() === cat || g.toLowerCase() === lname)))?.label;
 }
 
 export function actionBreakdown(store: DailyStore, rule: ConversionRule, from: string, to: string): ActionLine[] {
   const totals = new Map<string, number>();
   for (const row of store.rows) {
     if (row.d < from || row.d > to || !row.a) continue;
-    for (const [name, [conv]] of Object.entries(row.a)) totals.set(name, (totals.get(name) ?? 0) + conv);
+    for (const [name, x] of Object.entries(row.a)) totals.set(name, (totals.get(name) ?? 0) + (rule.ecommerce ? (x[2] ?? x[0] ?? 0) : (x[0] ?? 0)));
   }
   return [...totals.entries()]
     .filter(([, n]) => n > 0)
-    .map(([name, conversions]) => ({ name, category: store.actions?.[name] ?? "", conversions: round(conversions), counted: counts(name, store.actions?.[name], rule) }))
+    .map(([name, conversions]) => {
+      const category = store.actions?.[name] ?? "";
+      const step = rule.ecommerce ? googleStepFor(name, category) : undefined;
+      return { name, category, conversions: round(conversions), counted: rule.ecommerce ? !!step : counts(name, category, rule), step };
+    })
     .sort((a, b) => Number(b.counted) - Number(a.counted) || b.conversions - a.conversions);
 }

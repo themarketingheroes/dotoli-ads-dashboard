@@ -1,4 +1,4 @@
-import type { ClientConfig, GoogleAccountConfig } from "./types";
+import type { ClientConfig, ConversionRule, GoogleAccountConfig } from "./types";
 
 // The client roster lives in the DASHBOARD_CLIENTS env var (JSON), not in the
 // repo, so client names and account IDs never land in public source control.
@@ -8,10 +8,11 @@ export function getClients(): ClientConfig[] {
   const raw = process.env.DASHBOARD_CLIENTS;
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw) as Array<{ slug: string; name: string; meta?: unknown[]; google?: unknown[] }>;
+    const parsed = JSON.parse(raw) as Array<{ slug: string; name: string; meta?: unknown[]; google?: unknown[]; ecommerce?: boolean }>;
     return parsed.map((c) => ({
       slug: String(c.slug),
       name: String(c.name),
+      ecommerce: !!c.ecommerce,
       meta: (c.meta ?? []).map((id) => String(id).replace(/^act_/, "")),
       google: (c.google ?? []).map((g): GoogleAccountConfig => {
         if (typeof g === "object" && g !== null) {
@@ -28,8 +29,20 @@ export function getClients(): ClientConfig[] {
 }
 
 export function googleRule(googleId: string): GoogleAccountConfig {
-  for (const c of getClients()) for (const g of c.google) if (g.id === googleId) return g;
+  for (const c of getClients()) for (const g of c.google) if (g.id === googleId) return { ...g, ecommerce: g.ecommerce ?? c.ecommerce };
   return { id: googleId };
+}
+
+// Counting rule for any ad account (Google include/exclude, plus the client's e-commerce flag).
+export function accountRule(platform: "meta" | "google", id: string): ConversionRule {
+  if (platform === "google") return googleRule(id);
+  const client = getClients().find((c) => c.meta.includes(id));
+  return client?.ecommerce ? { ecommerce: true } : {};
+}
+
+// "tabs": overview shows one tab per client with each ad account as its own card.
+export function overviewLayout(): "cards" | "tabs" {
+  return process.env.DASHBOARD_LAYOUT === "tabs" ? "tabs" : "cards";
 }
 
 // Set DASHBOARD_AUTH=off to open the dashboard without sign-in.

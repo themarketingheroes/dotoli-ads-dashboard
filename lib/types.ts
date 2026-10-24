@@ -16,6 +16,7 @@ export interface Metrics {
 
 export interface DayPoint {
   date: string; // YYYY-MM-DD
+  value?: number;
   spend: number;
   results: number;
   clicks: number;
@@ -81,6 +82,7 @@ export interface ConversionRule {
   include?: string[];
   exclude?: string[];
   label?: string;
+  ecommerce?: boolean; // results = purchases, value = purchase value, funnel shown
 }
 
 export interface GoogleAccountConfig extends ConversionRule {
@@ -104,6 +106,7 @@ export interface ClientConfig {
   name: string;
   meta: string[];
   google: GoogleAccountConfig[];
+  ecommerce?: boolean;
 }
 
 export interface AccessEntry {
@@ -122,7 +125,9 @@ export interface DailyRow {
   k: number; // clicks
   r: number; // results (Meta); unused for Google, which uses a
   v: number; // value (Meta); unused for Google
-  a?: Record<string, [number, number]>; // Google: conversion action -> [conversions, value]
+  // Google: conversion action -> [conversions, value, all conversions]
+  // Meta: action type -> [count, value]
+  a?: Record<string, number[]>;
 }
 
 export interface DailyStore {
@@ -135,7 +140,8 @@ export interface DailyStore {
   from: string;
   to: string;
   campaigns: Record<string, { name: string; type: string }>;
-  actions?: Record<string, string>; // Google: action name -> category
+  version?: number; // bumped when the stored shape changes (forces a full refetch)
+  actions?: Record<string, string>; // Google: action name -> category. Meta: action type -> display name
   live?: LiveCampaign[]; // script-fed accounts: campaign settings from the latest push
   rows: DailyRow[];
 }

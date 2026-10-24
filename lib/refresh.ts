@@ -57,7 +57,7 @@ export async function runRefresh(trigger: "cron" | "manual"): Promise<Snapshot> 
         slug: c.slug,
         name: c.name,
         meta: await Promise.all(c.meta.map((id) => refreshAccount("meta", id))),
-        google: await Promise.all(c.google.map((g) => refreshAccount("google", g.id, g))),
+        google: await Promise.all(c.google.map((g) => refreshAccount("google", g.id, { ...g, ecommerce: g.ecommerce ?? c.ecommerce }))),
       })),
     ),
   ]);

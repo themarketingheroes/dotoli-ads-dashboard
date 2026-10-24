@@ -83,7 +83,7 @@ export async function googleInfo(cid: string) {
 export async function googleHistory(cid: string, from: string, to: string): Promise<{ rows: DailyRow[]; campaigns: DailyStore["campaigns"]; actions: Record<string, string> }> {
   const [perf, conv] = await Promise.all([
     gaql(cid, `SELECT campaign.id, campaign.name, campaign.advertising_channel_type, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks FROM campaign WHERE segments.date BETWEEN '${from}' AND '${to}'`),
-    gaql(cid, `SELECT campaign.id, segments.date, segments.conversion_action_name, segments.conversion_action_category, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${from}' AND '${to}' AND metrics.conversions > 0`),
+    gaql(cid, `SELECT campaign.id, segments.date, segments.conversion_action_name, segments.conversion_action_category, metrics.conversions, metrics.conversions_value, metrics.all_conversions FROM campaign WHERE segments.date BETWEEN '${from}' AND '${to}' AND metrics.all_conversions > 0`),
   ]);
   const campaigns: DailyStore["campaigns"] = {};
   const actions: Record<string, string> = {};
@@ -102,8 +102,8 @@ export async function googleHistory(cid: string, from: string, to: string): Prom
     const name = r.segments?.conversionActionName as string;
     actions[name] = r.segments?.conversionActionCategory ?? "";
     const row = rows.get(key(d, c)) ?? { d, c, s: 0, i: 0, k: 0, r: 0, v: 0, a: {} };
-    const prev = row.a![name] ?? [0, 0];
-    row.a![name] = [prev[0] + Number(r.metrics?.conversions ?? 0), prev[1] + Number(r.metrics?.conversionsValue ?? 0)];
+    const prev = row.a![name] ?? [0, 0, 0];
+    row.a![name] = [prev[0] + Number(r.metrics?.conversions ?? 0), prev[1] + Number(r.metrics?.conversionsValue ?? 0), (prev[2] ?? 0) + Number(r.metrics?.allConversions ?? 0)];
     rows.set(key(d, c), row);
   }
   return { rows: [...rows.values()], campaigns, actions };

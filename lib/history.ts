@@ -10,6 +10,9 @@ const HISTORY_DAYS = 400;
 // Recent days are refetched every refresh because conversions arrive late.
 const OVERLAP_DAYS = 35;
 
+// Bump when DailyRow contents change so every account refetches its full history once.
+export const STORE_VERSION = 2;
+
 const prefix = (platform: Platform, id: string) => `daily/${platform}-${id}`;
 
 export const loadStore = cache(async (platform: Platform, id: string): Promise<DailyStore | null> => {
@@ -21,7 +24,7 @@ export async function updateStore(platform: Platform, id: string) {
   const today = todayIn(info.timezone);
   const earliest = addDays(today, -HISTORY_DAYS);
   const existing = await readLatestJson<DailyStore>(prefix(platform, id));
-  const full = !existing || existing.from > earliest || existing.platform !== platform;
+  const full = !existing || existing.from > earliest || existing.platform !== platform || existing.version !== STORE_VERSION;
   const from = full ? earliest : addDays(today, -OVERLAP_DAYS);
 
   const fresh = platform === "meta" ? await metaHistory(id, from, today) : await googleHistory(id, from, today);
@@ -34,10 +37,11 @@ export async function updateStore(platform: Platform, id: string) {
     currency: info.currency,
     timezone: info.timezone,
     updatedAt: new Date().toISOString(),
+    version: STORE_VERSION,
     from: full ? earliest : existing!.from < earliest ? earliest : existing!.from,
     to: today,
     campaigns: { ...(existing?.campaigns ?? {}), ...fresh.campaigns },
-    actions: platform === "google" ? { ...(existing?.actions ?? {}), ...(("actions" in fresh ? fresh.actions : undefined) ?? {}) } : undefined,
+    actions: { ...(full ? {} : (existing?.actions ?? {})), ...(fresh.actions ?? {}) },
     rows: [...kept, ...fresh.rows].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0)),
   };
   return { store, status: info.status };

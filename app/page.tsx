@@ -7,6 +7,7 @@ import RefreshButton from "@/components/RefreshButton";
 import Shell from "@/components/Shell";
 import StatusBanner, { lastUpdated } from "@/components/StatusBanner";
 import { currentViewer } from "@/lib/access";
+import { overviewLayout } from "@/lib/config";
 import { money, num } from "@/lib/format";
 import { rangeQuery, resolveRange } from "@/lib/range";
 import { latestSnapshot } from "@/lib/refresh";
@@ -57,6 +58,77 @@ function AccountBlock({ v, icon }: { v: AccountView; icon: React.ReactNode }) {
   );
 }
 
+// Tabs layout: one card per ad account.
+function AccountCard({ v, href }: { v: AccountView; href: string }) {
+  const crit = v.flags.filter((f) => f.level === "critical").length;
+  const warn = v.flags.filter((f) => f.level === "warning").length;
+  const c = v.cur;
+  const p = v.prev;
+  const f = (k: string) => v.funnel?.find((s) => s.key === k)?.cur ?? 0;
+  return (
+    <Link href={href} className="card client-card acct-card">
+      <div className="cc-head">
+        <span className="plat">{v.platform === "meta" ? <MetaLogo /> : <GoogleAdsLogo />}{v.platform === "meta" ? "Meta Ads" : "Google Ads"}</span>
+        {v.error ? <span className="badge red">Not connected</span> : crit + warn === 0 ? <span className="badge green">No live issues</span> : (
+          <span className="cc-flags">
+            {crit > 0 && <span className="badge red">{crit} critical</span>}
+            {warn > 0 && <span className="badge amber">{warn} warning{warn > 1 ? "s" : ""}</span>}
+          </span>
+        )}
+      </div>
+      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{v.name || (v.platform === "meta" ? `act_${v.id}` : v.id)}</h3>
+      {v.error ? (
+        <div className="muted" style={{ fontSize: 13 }}>{v.error}</div>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+            <span className="big">{money(c.spend, v.currency)}</span>
+            <Delta now={c.spend} before={p?.spend ?? null} good="neutral" />
+            <span className="muted" style={{ fontSize: 12 }}>spend</span>
+          </div>
+          <div className="stats">
+            {v.ecommerce ? (
+              <>
+                <div><div className="l">Purchases</div><div className="v">{num(c.results, 1)} {p && <Delta now={c.results} before={p.results} />}</div></div>
+                <div><div className="l">Revenue</div><div className="v">{money(c.value, v.currency)}</div></div>
+                <div><div className="l">ROAS</div><div className="v">{c.roas === null ? "–" : `${c.roas.toFixed(2)}x`} {p && <Delta now={c.roas} before={p.roas} />}</div></div>
+              </>
+            ) : (
+              <>
+                <div><div className="l">{v.resultLabel}</div><div className="v">{num(c.results, 1)} {p && <Delta now={c.results} before={p.results} />}</div></div>
+                <div><div className="l">Per result</div><div className="v">{c.costPerResult === null ? "–" : money(c.costPerResult, v.currency)}</div></div>
+                <div><div className="l">CTR</div><div className="v">{c.ctr === null ? "–" : `${c.ctr.toFixed(2)}%`}</div></div>
+              </>
+            )}
+          </div>
+          {v.ecommerce && (
+            <div className="mini-funnel">
+              {v.funnel?.some((s) => s.key === "quick") && <><span>Quick Shop <b>{num(f("quick"))}</b></span><span className="arr">→</span></>}
+              <span>Add to cart <b>{num(f("atc"))}</b></span><span className="arr">→</span>
+              <span>Checkout <b>{num(f("checkout"))}</b></span><span className="arr">→</span>
+              <span>Purchase <b>{num(f("purchase"))}</b></span>
+            </div>
+          )}
+          <svg className="spark" viewBox="0 0 300 28" preserveAspectRatio="none" aria-hidden="true" style={{ width: "100%", height: 28 }}>
+            {(() => {
+              const pts = v.series;
+              if (pts.length < 2) return null;
+              const max = Math.max(...pts.map((x) => x.spend), 0.0001);
+              const d = pts.map((x, i) => `${i ? "L" : "M"}${((i / (pts.length - 1)) * 300).toFixed(1)},${(26 - (x.spend / max) * 24).toFixed(1)}`).join(" ");
+              return (
+                <>
+                  <path d={`${d} L300,28 L0,28 Z`} fill="var(--chart-fill)" />
+                  <path d={d} fill="none" stroke="var(--chart)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                </>
+              );
+            })()}
+          </svg>
+        </>
+      )}
+    </Link>
+  );
+}
+
 function FlagChips({ accounts }: { accounts: AccountReport[] }) {
   const flags = accounts.flatMap((a) => a.flags);
   const crit = flags.filter((f) => f.level === "critical").length;
@@ -88,6 +160,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     }),
   );
   cards.sort((a, b) => b.sortKey - a.sortKey);
+  const sp = await searchParams;
+  const layout = overviewLayout();
+  const tabSlug = (Array.isArray(sp.tab) ? sp.tab[0] : sp.tab) ?? viewer.clients[0]?.slug;
+  const tabCard = cards.find((c) => c.cfg.slug === tabSlug) ?? cards.find((c) => c.cfg.slug === viewer.clients[0]?.slug);
+  const withTab = (slug: string) => `/${qs ? `${qs}&` : "?"}tab=${slug}`;
 
   return (
     <Shell viewer={viewer} snapshot={snapshot} qs={qs}>
@@ -96,7 +173,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           <h1>Overview</h1>
           <p>
             <b style={{ color: "var(--fg)", fontWeight: 500 }}>{range.label}</b>
-            {range.compareLabel ? `, compared with ${range.compareLabel}` : ""}. Clients ordered by spend.
+            {range.compareLabel ? `, compared with ${range.compareLabel}` : ""}. {overviewLayout() === "tabs" ? "Accounts" : "Clients"} ordered by spend.
           </p>
           <p>{lastUpdated(snapshot)}</p>
         </div>
@@ -108,6 +185,31 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       <StatusBanner snapshot={snapshot} isOwner={viewer.isOwner || !!viewer.open} />
       {viewer.clients.length === 0 ? (
         <div className="card empty">No clients are assigned to your account yet.</div>
+      ) : layout === "tabs" ? (
+        <>
+          <nav className="otabs" aria-label="Clients">
+            {viewer.clients.map((cfg) => {
+              const c = cards.find((x) => x.cfg.slug === cfg.slug);
+              const n = (c?.meta.length ?? 0) + (c?.google.length ?? 0);
+              return (
+                <Link key={cfg.slug} href={withTab(cfg.slug)} className={`otab${tabCard?.cfg.slug === cfg.slug ? " on" : ""}`}>
+                  {cfg.name} <span className="cnt">{n} account{n === 1 ? "" : "s"}</span>
+                </Link>
+              );
+            })}
+          </nav>
+          {!tabCard?.report ? (
+            <div className="card empty">Waiting for first refresh.</div>
+          ) : (
+            <div className="grid">
+              {[...tabCard.meta, ...tabCard.google]
+                .sort((a, b) => b.cur.spend - a.cur.spend)
+                .map((v) => (
+                  <AccountCard key={`${v.platform}-${v.id}`} v={v} href={`/c/${tabCard.cfg.slug}${qs}#acct-${v.platform}-${v.id}`} />
+                ))}
+            </div>
+          )}
+        </>
       ) : (
         <div className="grid">
           {cards.map(({ cfg, report, meta, google }, i) => (

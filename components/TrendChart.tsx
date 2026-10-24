@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DayPoint } from "@/lib/types";
 
-type MetricKey = "spend" | "results" | "cpr" | "clicks";
+type MetricKey = "spend" | "results" | "cpr" | "clicks" | "revenue";
 
 interface Props {
   series: DayPoint[];
@@ -11,6 +11,7 @@ interface Props {
   currency: string;
   resultLabel: string;
   compareLabel: string | null;
+  ecommerce?: boolean;
 }
 
 const H = 240;
@@ -34,6 +35,7 @@ function value(p: DayPoint, m: MetricKey): number | null {
   if (m === "spend") return p.spend;
   if (m === "results") return p.results;
   if (m === "clicks") return p.clicks;
+  if (m === "revenue") return p.value ?? 0;
   return p.results > 0 ? p.spend / p.results : null;
 }
 
@@ -45,7 +47,7 @@ function niceMax(v: number) {
   return nice * exp;
 }
 
-export default function TrendChart({ series, cSeries, currency, resultLabel, compareLabel }: Props) {
+export default function TrendChart({ series, cSeries, currency, resultLabel, compareLabel, ecommerce }: Props) {
   const [metric, setMetric] = useState<MetricKey>("spend");
   const [hover, setHover] = useState<number | null>(null);
   const [width, setWidth] = useState(800);
@@ -58,13 +60,21 @@ export default function TrendChart({ series, cSeries, currency, resultLabel, com
     return () => ro.disconnect();
   }, []);
 
-  const tabs: { id: MetricKey; label: string }[] = [
-    { id: "spend", label: "Spend" },
-    { id: "results", label: resultLabel },
-    { id: "cpr", label: "Cost per result" },
-    { id: "clicks", label: "Clicks" },
-  ];
-  const isMoney = metric === "spend" || metric === "cpr";
+  const tabs: { id: MetricKey; label: string }[] = ecommerce
+    ? [
+        { id: "spend", label: "Spend" },
+        { id: "revenue", label: "Revenue" },
+        { id: "results", label: "Purchases" },
+        { id: "cpr", label: "Cost per purchase" },
+        { id: "clicks", label: "Clicks" },
+      ]
+    : [
+        { id: "spend", label: "Spend" },
+        { id: "results", label: resultLabel },
+        { id: "cpr", label: "Cost per result" },
+        { id: "clicks", label: "Clicks" },
+      ];
+  const isMoney = metric === "spend" || metric === "cpr" || metric === "revenue";
   const fmt = (n: number, compact = false) => (isMoney ? fmtMoney(n, currency, compact) : fmtNum(n, compact));
 
   const cur = useMemo(() => series.map((p) => value(p, metric)), [series, metric]);
