@@ -2,6 +2,7 @@ import { getClients } from "./config";
 import { flagAccount } from "./flags";
 import { googleStatus, googleStatusFromStore } from "./google";
 import { saveStore, updateStore } from "./history";
+import { resolveByName } from "./ingest";
 import { metaStatus, metaTokenExpiry } from "./meta";
 import { readLatestJson, writeJson } from "./store";
 import type { AccountReport, DailyStore, GoogleAccountConfig, Platform, Snapshot } from "./types";
@@ -25,9 +26,12 @@ function failed(platform: Platform, id: string, err: unknown): AccountReport {
 async function refreshAccount(platform: Platform, id: string, cfg?: GoogleAccountConfig): Promise<AccountReport> {
   try {
     if (platform === "google" && cfg?.source === "script") {
-      const store = await readLatestJson<DailyStore>(`daily/google-${id}`);
+      const resolved = id || (cfg.name ? await resolveByName(cfg.name) : null);
+      if (!resolved) throw new Error(`Waiting for the Google Ads Script to send "${cfg.name ?? id}"`);
+      const store = await readLatestJson<DailyStore>(`daily/google-${resolved}`);
       if (!store) throw new Error("Waiting for the first data push from the Google Ads Script");
-      const report = googleStatusFromStore(cfg, store);
+      const report = googleStatusFromStore({ ...cfg, id: resolved }, store);
+      report.rule = { ...cfg, id: resolved } as AccountReport["rule"];
       report.flags = [...report.flags, ...flagAccount(report)];
       return report;
     }
@@ -57,7 +61,10 @@ export async function runRefresh(trigger: "cron" | "manual"): Promise<Snapshot> 
         slug: c.slug,
         name: c.name,
         meta: await Promise.all(c.meta.map((id) => refreshAccount("meta", id))),
-        google: await Promise.all(c.google.map((g) => refreshAccount("google", g.id, { ...g, ecommerce: g.ecommerce ?? c.ecommerce }))),
+        google: await Promise.all(c.google.map((g) => refreshAccount("google", g.id, { ...g, ecommerce: g.ecommerce ?? c.ecommerce }).then((r) => {
+          if (r.error && !g.id && g.name) r.name = g.name;
+          return r;
+        }))),
       })),
     ),
   ]);

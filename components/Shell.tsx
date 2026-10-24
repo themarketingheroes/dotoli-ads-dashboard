@@ -5,6 +5,7 @@ import { Logo } from "./Icons";
 import MobileNav from "./MobileNav";
 import TogasLogo from "./TogasLogo";
 import { theme } from "@/lib/config";
+import { reportEnabled } from "@/lib/report";
 
 function health(snapshot: Snapshot | null, slug: string): "critical" | "warning" | "ok" | null {
   const c = snapshot?.clients.find((x) => x.slug === slug);
@@ -32,7 +33,7 @@ export default function Shell({
 }) {
   return (
     <>
-      <header className="topbar">
+      <header className="topbar no-print">
         <Link href={`/${qs}`} className="brand">
           {theme() === "togas" ? (
             <>
@@ -63,7 +64,7 @@ export default function Shell({
         )}
       </header>
       <div className="layout">
-        <nav className="sidebar" aria-label="Clients">
+        <nav className="sidebar no-print" aria-label="Clients">
           <Link href={`/${qs}`} className={`navlink${!active ? " active" : ""}`}>Overview</Link>
           <h6>Clients</h6>
           {viewer.clients.map((c) => {
@@ -75,6 +76,12 @@ export default function Shell({
               </Link>
             );
           })}
+          {reportEnabled() && (
+            <>
+              <h6>Reports</h6>
+              <Link href="/report" className={`navlink${active === "__report" ? " active" : ""}`}>Google Ads report</Link>
+            </>
+          )}
           {viewer.isOwner && (
             <>
               <h6>Settings</h6>

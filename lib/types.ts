@@ -59,6 +59,7 @@ export interface AccountReport {
   series: DayPoint[];
   campaigns: CampaignRow[];
   flags: Flag[];
+  rule?: ConversionRule; // counting rule used for this account (set at refresh)
 }
 
 export interface ClientReport {
@@ -86,7 +87,8 @@ export interface ConversionRule {
 }
 
 export interface GoogleAccountConfig extends ConversionRule {
-  id: string;
+  id: string; // may be "" when the account is matched by name (script-fed accounts)
+  name?: string;
   // "script": data is pushed by a Google Ads Script to /api/ingest (for logins that block API apps)
   source?: "api" | "script";
 }

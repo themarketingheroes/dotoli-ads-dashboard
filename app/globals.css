@@ -256,6 +256,17 @@ td .sub { display: block; color: var(--muted); font-size: 11px; margin-top: 2px;
 .mini-funnel b { color: var(--fg); font-weight: 500; font-family: var(--font-geist-mono), monospace; }
 .mini-funnel .arr { color: var(--muted); }
 
+/* ---------- Markets (side-by-side panels) ---------- */
+.markets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.market { padding: 22px 22px 8px; }
+.market-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.market-head h2 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+.theme-togas .market-head h2 { font-family: var(--font-brand-serif), Georgia, serif; font-weight: 500; font-size: 30px; letter-spacing: 0; }
+.acct-row { display: flex; flex-direction: column; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--border); }
+.acct-row:last-child { border-bottom: none; }
+.acct-row:hover h3 { text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 960px) { .markets { grid-template-columns: 1fr; } }
+
 /* ---------- Overview ---------- */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
 .client-card { padding: 18px; display: flex; flex-direction: column; gap: 14px; transition: border-color 0.15s, box-shadow 0.15s; }
@@ -376,4 +387,43 @@ td .sub { display: block; color: var(--muted); font-size: 11px; margin-top: 2px;
 .theme-togas .share i, .theme-togas .fbar i { background: var(--fg); }
 @media (prefers-color-scheme: dark) {
   .theme-togas .btn.primary { background: #fcfcfc; color: #000; border-color: #fcfcfc; }
+}
+
+/* ---------- Google Ads report ---------- */
+.rmarket { margin-bottom: 40px; }
+.rmarket-title { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 14px; }
+.raccount { padding: 22px; margin-bottom: 20px; }
+.raccount-head h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.raccount-head p { margin: 4px 0 0; font-size: 13px; }
+.rsec { margin-top: 26px; }
+.rsec h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 16px; font-weight: 600; }
+.rnum { display: inline-grid; place-items: center; min-width: 30px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--bg-3); font-size: 12px; font-weight: 600; font-family: var(--font-geist-mono), monospace; }
+.rsec .table-wrap { border: 1px solid var(--border); border-radius: var(--radius); }
+.rnote { padding: 10px 14px; border-radius: var(--radius); background: var(--bg-3); font-size: 13px; margin: 0 0 10px; line-height: 1.55; }
+.rnote.flag { background: var(--warn-bg); color: var(--warn); }
+.rnote.ok { background: var(--good-bg); color: var(--good); }
+.rsmall { font-size: 12px; margin: 8px 0 0; }
+.rsplit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 10px; }
+.rsplit .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+.rsplit .v { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; font-family: var(--font-geist-mono), monospace; }
+.rbar { height: 8px; background: var(--bg-3); border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+.rbar i { display: block; height: 100%; background: var(--chart); }
+.rpmax { margin-bottom: 16px; }
+.rpmax h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.rpmax h4 .muted { font-weight: 400; }
+.ropps { margin: 0; padding-left: 20px; display: grid; gap: 10px; font-size: 14px; }
+.ropps .muted { font-size: 13px; margin-top: 2px; }
+.theme-togas .rmarket-title, .theme-togas .raccount-head h2 { font-family: var(--font-brand-serif), Georgia, serif; font-weight: 500; letter-spacing: 0; }
+.theme-togas .rmarket-title { font-size: 34px; }
+.theme-togas .raccount-head h2 { font-size: 24px; }
+
+@media print {
+  .no-print, .mobile-nav { display: none !important; }
+  .layout { display: block; }
+  .main { padding: 0; max-width: none; }
+  body { background: #fff; }
+  .card { box-shadow: none; break-inside: avoid-page; }
+  .rsec { break-inside: avoid; }
+  .raccount { break-before: auto; }
+  .table-wrap { overflow: visible; }
 }

@@ -1,4 +1,5 @@
 import { saveStore, STORE_VERSION } from "./history";
+import { readLatestJson, writeJson } from "./store";
 import type { DailyRow, DailyStore, LiveCampaign } from "./types";
 
 // One POST per Google Ads account from the Google Ads Script. Each push carries the
@@ -8,6 +9,7 @@ export interface IngestAccount {
   campaigns?: LiveCampaign[];
   rows?: [string, string, string, string, number, number, number][]; // date, campaign id, name, channel, cost, impressions, clicks
   conv?: [string, string, string, string, number, number, number?][]; // date, campaign id, action, category, conversions, value, all conversions
+  report?: Record<string, unknown>; // month-to-date breakdown for the report page
 }
 
 export async function ingestAccount(p: IngestAccount): Promise<{ id: string; rows: number; from: string; to: string }> {
@@ -48,5 +50,22 @@ export async function ingestAccount(p: IngestAccount): Promise<{ id: string; row
     rows,
   };
   await saveStore(store);
+  if (p.report) await writeJson(`report/google-${id}`, { ...p.report, account: store.name, currency: store.currency }, 3);
+  // Name -> id index, so the dashboard can list script accounts by name.
+  const index = (await readLatestJson<Record<string, string>>("ingest/index")) ?? {};
+  if (index[id] !== store.name) {
+    index[id] = store.name;
+    await writeJson("ingest/index", index, 3);
+  }
   return { id, rows: rows.length, from: store.from, to: store.to };
+}
+
+export const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// Finds the pushed account whose name matches (exact first, then "contains").
+export async function resolveByName(name: string): Promise<string | null> {
+  const index = (await readLatestJson<Record<string, string>>("ingest/index")) ?? {};
+  const want = normName(name);
+  const entries = Object.entries(index);
+  return (entries.find(([, n]) => normName(n) === want) ?? entries.find(([, n]) => normName(n).includes(want)))?.[0] ?? null;
 }

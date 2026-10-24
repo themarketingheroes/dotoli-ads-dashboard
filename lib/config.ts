@@ -17,7 +17,7 @@ export function getClients(): ClientConfig[] {
       google: (c.google ?? []).map((g): GoogleAccountConfig => {
         if (typeof g === "object" && g !== null) {
           const o = g as GoogleAccountConfig;
-          return { ...o, id: String(o.id).replace(/\D/g, "") };
+          return { ...o, id: String(o.id ?? "").replace(/\D/g, "") };
         }
         return { id: String(g).replace(/\D/g, "") };
       }),

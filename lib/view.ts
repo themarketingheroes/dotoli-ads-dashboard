@@ -52,7 +52,7 @@ const empty = (): Metrics => finalize(zeroRaw());
 
 export async function accountView(report: AccountReport, range: Range, withDetail = true): Promise<AccountView> {
   const store = report.error ? null : await loadStore(report.platform, report.id);
-  const rule = accountRule(report.platform, report.id);
+  const rule = report.rule ?? accountRule(report.platform, report.id);
   const ecommerce = !!rule.ecommerce;
   const base = {
     platform: report.platform,

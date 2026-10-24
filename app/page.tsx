@@ -59,14 +59,14 @@ function AccountBlock({ v, icon }: { v: AccountView; icon: React.ReactNode }) {
 }
 
 // Tabs layout: one card per ad account.
-function AccountCard({ v, href }: { v: AccountView; href: string }) {
+function AccountCard({ v, href, plain = false }: { v: AccountView; href: string; plain?: boolean }) {
   const crit = v.flags.filter((f) => f.level === "critical").length;
   const warn = v.flags.filter((f) => f.level === "warning").length;
   const c = v.cur;
   const p = v.prev;
   const f = (k: string) => v.funnel?.find((s) => s.key === k)?.cur ?? 0;
   return (
-    <Link href={href} className="card client-card acct-card">
+    <Link href={href} className={plain ? "acct-card acct-row" : "card client-card acct-card"}>
       <div className="cc-head">
         <span className="plat">{v.platform === "meta" ? <MetaLogo /> : <GoogleAdsLogo />}{v.platform === "meta" ? "Meta Ads" : "Google Ads"}</span>
         {v.error ? <span className="badge red">Not connected</span> : crit + warn === 0 ? <span className="badge green">No live issues</span> : (
@@ -160,11 +160,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     }),
   );
   cards.sort((a, b) => b.sortKey - a.sortKey);
-  const sp = await searchParams;
   const layout = overviewLayout();
-  const tabSlug = (Array.isArray(sp.tab) ? sp.tab[0] : sp.tab) ?? viewer.clients[0]?.slug;
-  const tabCard = cards.find((c) => c.cfg.slug === tabSlug) ?? cards.find((c) => c.cfg.slug === viewer.clients[0]?.slug);
-  const withTab = (slug: string) => `/${qs ? `${qs}&` : "?"}tab=${slug}`;
 
   return (
     <Shell viewer={viewer} snapshot={snapshot} qs={qs}>
@@ -186,30 +182,26 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {viewer.clients.length === 0 ? (
         <div className="card empty">No clients are assigned to your account yet.</div>
       ) : layout === "tabs" ? (
-        <>
-          <nav className="otabs" aria-label="Clients">
-            {viewer.clients.map((cfg) => {
-              const c = cards.find((x) => x.cfg.slug === cfg.slug);
-              const n = (c?.meta.length ?? 0) + (c?.google.length ?? 0);
-              return (
-                <Link key={cfg.slug} href={withTab(cfg.slug)} className={`otab${tabCard?.cfg.slug === cfg.slug ? " on" : ""}`}>
-                  {cfg.name} <span className="cnt">{n} account{n === 1 ? "" : "s"}</span>
-                </Link>
-              );
-            })}
-          </nav>
-          {!tabCard?.report ? (
-            <div className="card empty">Waiting for first refresh.</div>
-          ) : (
-            <div className="grid">
-              {[...tabCard.meta, ...tabCard.google]
-                .sort((a, b) => b.cur.spend - a.cur.spend)
-                .map((v) => (
-                  <AccountCard key={`${v.platform}-${v.id}`} v={v} href={`/c/${tabCard.cfg.slug}${qs}#acct-${v.platform}-${v.id}`} />
-                ))}
-            </div>
-          )}
-        </>
+        <div className="markets">
+          {cards.map(({ cfg, report, meta, google }) => {
+            const accounts = [...meta, ...google].sort((a, b) => b.cur.spend - a.cur.spend);
+            return (
+              <section key={cfg.slug} className="card market">
+                <div className="market-head">
+                  <h2>{cfg.name}</h2>
+                  <Link href={`/c/${cfg.slug}${qs}`} className="btn small">Open details</Link>
+                </div>
+                {!report ? (
+                  <div className="muted">Waiting for first refresh.</div>
+                ) : accounts.length === 0 ? (
+                  <div className="muted">No ad accounts connected yet.</div>
+                ) : (
+                  accounts.map((v) => <AccountCard key={`${v.platform}-${v.id}`} v={v} plain href={`/c/${cfg.slug}${qs}#acct-${v.platform}-${v.id}`} />)
+                )}
+              </section>
+            );
+          })}
+        </div>
       ) : (
         <div className="grid">
           {cards.map(({ cfg, report, meta, google }, i) => (
