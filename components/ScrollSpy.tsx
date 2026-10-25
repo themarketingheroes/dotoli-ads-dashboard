@@ -25,7 +25,7 @@ export default function ScrollSpy({ items, variant }: { items: { id: string; lab
     if (variant !== "tabs") return;
     const el = document.querySelector<HTMLElement>(`.rtabs a[href="#${current}"]`);
     const bar = el?.parentElement;
-    if (el && bar) bar.scrollTo({ left: el.offsetLeft - 16, behavior: "smooth" });
+    if (el && bar) bar.scrollLeft += el.getBoundingClientRect().left - bar.getBoundingClientRect().left - 16;
   }, [current, variant]);
 
   return (
