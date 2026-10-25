@@ -1,4 +1,5 @@
 import { readLatestJson } from "./store";
+import CATEGORY_NAMES from "./product-categories.json";
 import type { DailyStore } from "./types";
 
 // Raw month-to-date tables pushed by the Google Ads Script (see buildReport in the script).
@@ -83,6 +84,14 @@ export const typeName = (c: string) => TYPE[c] ?? c.replace(/_/g, " ").toLowerCa
 const has = (text: string, words: string[]) => words.some((w) => w && text.toLowerCase().includes(w.toLowerCase()));
 const roas = (x: { cost: number; value: number }) => (x.cost > 0 && x.value > 0 ? x.value / x.cost : null);
 const plural = (n: number, word: string) => `${n.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${word}${Math.round(n) === 1 ? "" : "s"}`;
+// Google product categories arrive as "productCategoryConstants/LEVEL2~4171"; map to English names.
+const catName = (v: string) => {
+  if (!v) return "";
+  const key = v.split("/").pop() ?? v;
+  return (CATEGORY_NAMES as Record<string, string>)[key] ?? (key.includes("~") ? "" : v);
+};
+const cap = (x: string) => (x ? x.charAt(0).toUpperCase() + x.slice(1) : x);
+const NO_TYPE = "No product type set";
 const andList = (a: string[]) => (a.length <= 1 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`);
 const sentence = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
@@ -161,6 +170,7 @@ export interface ReportView {
   categories: CategoryLine[];
   categoryNote: string;
   categoryEmpty: string;
+  productScope: string;
   productCost: number;
   conversions: { counted: string; note: string };
   brand: { brand: number; nonBrand: number; brandShare: number; termCoverage: number; pmaxEstimated: boolean; byType: { type: string; brand: number; nonBrand: number }[] } | null;
@@ -191,7 +201,7 @@ export function buildReportView(r: RawReport, cfg: ReportConfig, mix: ConvMix[] 
       if (!focus && (c.channel === "SHOPPING" || c.channel === "PERFORMANCE_MAX")) {
         const byType = new Map<string, number>();
         for (const p of r.products.filter((p) => p.campaignId === c.id)) {
-          const k = p.type1 ? (p.type2 ? `${p.type1} > ${p.type2}` : p.type1) : p.cat1 || p.title || "Other";
+          const k = p.type1 ? cap(p.type1) : catName(p.cat2) || catName(p.cat1) || p.title || "Other";
           byType.set(k, (byType.get(k) ?? 0) + p.cost);
         }
         focus = topNames([...byType.entries()].map(([name, cost]) => ({ name, cost })));
@@ -235,32 +245,60 @@ export function buildReportView(r: RawReport, cfg: ReportConfig, mix: ConvMix[] 
   // 1b. Spend by product category (Shopping + Performance Max products).
   const cats = new Map<string, CategoryLine>();
   const byTitle = r.products.length > 0 && r.products.every((p) => !p.type1 && !p.cat1);
+  // One dimension per account: the feed's own product types when they cover most
+  // spend, otherwise Google's product categories.
+  const allProductCost = r.products.reduce((s, p) => s + p.cost, 0);
+  const typedCost = r.products.reduce((s, p) => s + (p.type1 ? p.cost : 0), 0);
+  const useTypes = typedCost > 0 && typedCost >= allProductCost * 0.5;
   for (const p of r.products) {
-    const name = p.type1 || p.cat1 || (byTitle && p.title) || "Uncategorised";
-    const sub = p.type2 || p.cat2 || "";
-    const c = cats.get(name) ?? { name, cost: 0, share: 0, conv: 0, value: 0, roas: null, priority: has(name, cfg.priorityCategories), children: [] };
+    let name: string;
+    let sub: string;
+    if (byTitle) { name = p.title || "Uncategorised"; sub = ""; }
+    else if (useTypes) { name = p.type1 ? cap(p.type1) : NO_TYPE; sub = p.type1 ? cap(p.type2) : catName(p.cat2) || catName(p.cat1); }
+    else { name = catName(p.cat2) || catName(p.cat1) || "Uncategorised"; sub = ""; }
+    const c = cats.get(name) ?? { name, cost: 0, share: 0, conv: 0, value: 0, roas: null, priority: name !== NO_TYPE && has(name, cfg.priorityCategories), children: [] };
     c.cost += p.cost; c.conv += p.conv; c.value += p.value;
     if (sub) {
       const ch = c.children.find((x) => x.name === sub);
       if (ch) ch.cost += p.cost; else c.children.push({ name: sub, cost: p.cost });
     }
-    if (!c.priority && sub && has(sub, cfg.priorityCategories)) c.priority = true;
     cats.set(name, c);
   }
   const productCost = [...cats.values()].reduce((s, c) => s + c.cost, 0);
-  const categories = [...cats.values()]
-    .map((c) => ({ ...c, share: productCost > 0 ? c.cost / productCost : 0, roas: roas(c), children: c.children.sort((a, b) => b.cost - a.cost) }))
+  const all = [...cats.values()]
+    .map((c) => ({ ...c, share: productCost > 0 ? c.cost / productCost : 0, roas: roas(c), children: c.children.filter((x) => x.cost >= 0.5).sort((a, b) => b.cost - a.cost) }))
     .sort((a, b) => b.cost - a.cost);
+  // Categories under 1% of product spend are folded into one line.
+  const small = all.filter((c) => c.share < 0.01);
+  const minor = small.length >= 2 ? small : [];
+  const categories: CategoryLine[] = all.filter((c) => !minor.includes(c));
+  if (minor.length) {
+    const o = minor.reduce((a, c) => ({ cost: a.cost + c.cost, conv: a.conv + c.conv, value: a.value + c.value }), { cost: 0, conv: 0, value: 0 });
+    categories.push({ name: `Other (${minor.length} small categories)`, ...o, share: productCost > 0 ? o.cost / productCost : 0, roas: roas(o), priority: false, children: minor.filter((c) => c.cost >= 0.5).map((c) => ({ name: c.name, cost: c.cost })) });
+  }
+  const moneyShort = (n: number) => fm(n, n >= 100 ? 0 : 2);
   let categoryNote = "";
   if (categories.length && cfg.priorityCategories.length) {
-    const firstNonPriority = categories.findIndex((c) => !c.priority);
-    const lastPriority = categories.map((c) => c.priority).lastIndexOf(true);
-    const prioShare = categories.filter((c) => c.priority).reduce((s, c) => s + c.share, 0);
-    if (lastPriority === -1) categoryNote = `Flag: none of the priority categories (${cfg.priorityCategories.join(", ")}) received product spend this month.`;
-    else if (firstNonPriority !== -1 && firstNonPriority < lastPriority) {
-      categoryNote = `Flag: "${categories[firstNonPriority].name}" outspends at least one priority category. Priority categories took ${(prioShare * 100).toFixed(0)}% of product spend.`;
+    const prio = categories.filter((c) => c.priority && c.cost >= 1);
+    const named = categories.filter((c) => !c.priority && c.name !== NO_TYPE && !c.name.startsWith("Other ("));
+    const prioShare = prio.reduce((s, c) => s + c.share, 0);
+    const weakest = prio[prio.length - 1];
+    const top = named[0];
+    if (!prio.length) categoryNote = `Flag: none of the priority categories (${cfg.priorityCategories.join(", ")}) received product spend this month.`;
+    else if (top && weakest && top.cost > weakest.cost) {
+      const ahead = named.filter((c) => c.cost > weakest.cost).slice(0, 3);
+      categoryNote = `Flag: priority categories (${prio.map((c) => c.name).join(", ")}) took ${(prioShare * 100).toFixed(0)}% of product spend. ${andList(ahead.map((c) => `${c.name} (${moneyShort(c.cost)})`))} ${ahead.length === 1 ? "spends" : "each spend"} more than ${weakest.name} (${moneyShort(weakest.cost)}).`;
     } else categoryNote = `On track: priority categories are the heaviest spend, at ${(prioShare * 100).toFixed(0)}% of product spend.`;
   }
+  const untyped = categories.find((c) => c.name === NO_TYPE);
+  if (untyped && untyped.share >= 0.05) {
+    categoryNote += ` ${moneyShort(untyped.cost)} (${(untyped.share * 100).toFixed(0)}%) went to products with no product type in the feed${untyped.children[0] ? `, mostly ${untyped.children[0].name}` : ""}; adding product types to those items makes this split complete.`;
+  }
+  const otherPmax = r.campaigns.filter((c) => c.channel === "PERFORMANCE_MAX").reduce((s, c) => s + c.cost, 0) + r.campaigns.filter((c) => c.channel === "SHOPPING").reduce((s, c) => s + c.cost, 0) - productCost;
+  const productScope = otherPmax > 1 && productCost > 0
+    ? `The other ${moneyShort(otherPmax)} of Shopping and Performance Max spend went to non-product placements (Search text, Display, YouTube), which Google does not split by product.`
+    : "";
+  if (!useTypes && !byTitle && categories.length) categoryNote = (categoryNote ? categoryNote + " " : "") + "This feed has no product types, so spend is grouped by Google's product categories.";
   if (byTitle && categories.length) categoryNote = (categoryNote ? categoryNote + " " : "") + "Google did not return product types for this account, so spend is shown per product.";
   const retailSpend = r.campaigns.filter((c) => c.channel === "SHOPPING" || c.channel === "PERFORMANCE_MAX").reduce((s, c) => s + c.cost, 0);
   // Shopping campaigns always run on the feed, so no product rows there means the query failed.
@@ -457,6 +495,7 @@ export function buildReportView(r: RawReport, cfg: ReportConfig, mix: ConvMix[] 
     categories,
     categoryNote,
     categoryEmpty,
+    productScope,
     productCost,
     conversions,
     brand,

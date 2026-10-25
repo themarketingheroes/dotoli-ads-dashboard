@@ -68,7 +68,7 @@ function AccountReport({ v }: { v: ReportView }) {
           <p className="muted">{v.categoryEmpty}</p>
         ) : (
           <>
-            {v.categoryNote && <p className={`rnote ${v.categoryNote.startsWith("Flag") ? "flag" : "ok"}`}>{v.categoryNote}</p>}
+            {v.categoryNote && <p className={`rnote ${/^Flag|no product type in the feed/.test(v.categoryNote) ? "flag" : "ok"}`}>{v.categoryNote.trim()}</p>}
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Category</th><th>Spend</th><th>Share</th><th>Conversions</th><th>Conv. value</th><th>ROAS</th></tr></thead>
@@ -89,7 +89,7 @@ function AccountReport({ v }: { v: ReportView }) {
                 </tbody>
               </table>
             </div>
-            <p className="muted rsmall">Product spend from Shopping and Performance Max: {money(v.productCost, c)} of {money(v.totalCost, c)} total.</p>
+            <p className="muted rsmall">Product spend from Shopping and Performance Max: {money(v.productCost, c)} of {money(v.totalCost, c)} total.{v.productScope && ` ${v.productScope}`}</p>
           </>
         )}
       </Section>
