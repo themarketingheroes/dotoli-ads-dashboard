@@ -4,13 +4,15 @@ import Shell from "@/components/Shell";
 import { currentViewer } from "@/lib/access";
 import { fmtRange } from "@/lib/range";
 import { latestSnapshot } from "@/lib/refresh";
-import { buildReportView, loadReport, reportConfig, reportEnabled, ReportView } from "@/lib/report";
+import { buildReportView, loadConversionMix, loadReport, reportConfig, reportEnabled, ReportView } from "@/lib/report";
 
 export const dynamic = "force-dynamic";
 
 const money = (n: number | null, cur: string, d?: number) =>
   n === null ? "–" : new Intl.NumberFormat("en-US", { style: "currency", currency: cur || "USD", minimumFractionDigits: d ?? (Math.abs(n) >= 100 ? 0 : 2), maximumFractionDigits: d ?? (Math.abs(n) >= 100 ? 0 : 2) }).format(n);
 const pct = (n: number | null, d = 0) => (n === null ? "–" : `${n.toFixed(d)}%`);
+// Google reports impression share below 10% as 0.0999 and above 90% as 0.9001.
+const share = (n: number | null) => (n === null ? "–" : Math.abs(n - 9.99) < 0.001 ? "<10%" : Math.abs(n - 90.01) < 0.001 ? ">90%" : `${n.toFixed(1)}%`);
 const x2 = (n: number | null) => (n === null ? "–" : `${n.toFixed(2)}x`);
 const nice = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
@@ -32,6 +34,7 @@ function AccountReport({ v }: { v: ReportView }) {
           <h2>{v.account}</h2>
           <p className="muted">
             Google Ads, month to date ({fmtRange(v.period.from, v.period.to)}). All figures in {c}. Total spend {money(v.totalCost, c)}.
+            {" "}Data as of {new Date(v.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET.
           </p>
         </div>
       </div>
@@ -39,11 +42,11 @@ function AccountReport({ v }: { v: ReportView }) {
       <Section n="1a" title="Active campaigns">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Campaign</th><th style={{ textAlign: "left" }}>Type</th><th style={{ textAlign: "left" }}>Focus</th><th>Daily budget</th><th>Spend this month</th><th>Purchases</th><th>Revenue</th><th>ROAS</th></tr></thead>
+            <thead><tr><th>Campaign</th><th style={{ textAlign: "left" }}>Type</th><th style={{ textAlign: "left" }}>Focus</th><th>Daily budget</th><th>Spend this month</th><th>Conversions</th><th>Conv. value</th><th>ROAS</th></tr></thead>
             <tbody>
               {v.campaigns.map((x) => (
                 <tr key={x.id}>
-                  <td className="camp"><div className="cname">{x.name}</div>{x.reasons && <div className="ctype">{nice(x.status)}: {x.reasons.split(",").map((s) => nice(s.trim())).join(", ")}</div>}</td>
+                  <td className="camp"><div className="cname">{x.name}</div>{x.status && <div className="ctype">{x.status}</div>}</td>
                   <td style={{ textAlign: "left" }}>{x.type}</td>
                   <td style={{ textAlign: "left", whiteSpace: "normal", maxWidth: 320 }}>{x.focus}</td>
                   <td className="num">{money(x.budget, c)}</td>
@@ -56,17 +59,19 @@ function AccountReport({ v }: { v: ReportView }) {
             </tbody>
           </table>
         </div>
+        {v.conversions.counted && <p className="muted rsmall">{v.conversions.counted}</p>}
+        {v.conversions.note && <p className="rnote flag">{v.conversions.note}</p>}
       </Section>
 
       <Section n="1b" title="Spend by product category">
         {v.categories.length === 0 ? (
-          <p className="muted">No Shopping or Performance Max product spend this month.</p>
+          <p className="muted">{v.categoryEmpty}</p>
         ) : (
           <>
             {v.categoryNote && <p className={`rnote ${v.categoryNote.startsWith("Flag") ? "flag" : "ok"}`}>{v.categoryNote}</p>}
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Category</th><th>Spend</th><th>Share</th><th>Purchases</th><th>Revenue</th><th>ROAS</th></tr></thead>
+                <thead><tr><th>Category</th><th>Spend</th><th>Share</th><th>Conversions</th><th>Conv. value</th><th>ROAS</th></tr></thead>
                 <tbody>
                   {v.categories.map((k) => (
                     <tr key={k.name}>
@@ -119,15 +124,16 @@ function AccountReport({ v }: { v: ReportView }) {
         ) : (
           v.pmax.map((p) => (
             <div key={p.campaign} className="rpmax">
-              <h4>{p.campaign} <span className="muted">· {money(p.cost, c)} spend · {p.conv.toFixed(0)} purchases · {money(p.value, c)} revenue</span></h4>
+              <h4>{p.campaign} <span className="muted">· {money(p.cost, c)} spend · {p.conv.toFixed(0)} conversion{Math.round(p.conv) === 1 ? "" : "s"} · {money(p.value, c)} conv. value</span></h4>
+              {p.overlap && <p className="rnote flag">{p.overlap}</p>}
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Asset group</th><th style={{ textAlign: "left" }}>Products covered</th><th>Ad strength</th><th>Spend</th><th>Purchases</th><th>ROAS</th></tr></thead>
+                  <thead><tr><th>Asset group</th><th style={{ textAlign: "left" }}>Products covered</th><th>Ad strength</th><th>Spend</th><th>Conversions</th><th>ROAS</th></tr></thead>
                   <tbody>
                     {p.assetGroups.map((a) => (
                       <tr key={a.name}>
                         <td className="camp"><div className="cname">{a.name}</div><div className="ctype">{nice(a.status)}</div></td>
-                        <td style={{ textAlign: "left", whiteSpace: "normal", maxWidth: 360 }}>{a.products.join("; ")}</td>
+                        <td style={{ textAlign: "left", whiteSpace: "normal", maxWidth: 420 }}>{a.products.map((l) => <div key={l}>{l}</div>)}</td>
                         <td>{a.strength ? nice(a.strength) : "–"}</td>
                         <td className="num">{money(a.cost, c)}</td>
                         <td className="num">{a.conv.toFixed(0)}</td>
@@ -138,7 +144,7 @@ function AccountReport({ v }: { v: ReportView }) {
                 </table>
               </div>
               {p.topCategories.length > 0 && (
-                <p className="rsmall">Top search themes: {p.topCategories.map((t) => `${t.label} (${t.clicks} clicks)`).join(", ")}.</p>
+                <p className="rsmall">Top search themes: {p.topCategories.map((t) => `${t.label} (${t.clicks} click${t.clicks === 1 ? "" : "s"})`).join(", ")}.</p>
               )}
             </div>
           ))
@@ -146,8 +152,9 @@ function AccountReport({ v }: { v: ReportView }) {
       </Section>
 
       <Section n="1e" title="Opportunities for extra budget">
+        {v.opportunityNote && <p className="rnote flag">{v.opportunityNote}</p>}
         {v.opportunities.length === 0 ? (
-          <p className="muted">No converting campaign is clearly held back by budget this month.</p>
+          !v.opportunityNote && <p className="muted">No converting campaign is clearly held back by budget this month.</p>
         ) : (
           <ol className="ropps">
             {v.opportunities.map((o, i) => (
@@ -172,20 +179,20 @@ function AccountReport({ v }: { v: ReportView }) {
         )}
       </Section>
 
-      <Section n="3" title="Competitor campaigns">
+      <Section n="3" title="Competitor campaigns (all time)">
         <p className="rnote">{v.competitor.verdict}</p>
         {v.competitor.campaigns.length > 0 && (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Earlier competitor campaign</th><th>Spend</th><th>Clicks</th><th>Avg CPC</th><th>Purchases</th><th>ROAS</th></tr></thead>
-              <tbody>{v.competitor.campaigns.map((k) => <tr key={k.id}><td>{k.name}</td><td className="num">{money(k.cost, c)}</td><td className="num">{k.clicks.toLocaleString("en-US")}</td><td className="num">{money(k.clicks > 0 ? k.cost / k.clicks : null, c, 2)}</td><td className="num">{k.conv.toFixed(0)}</td><td className="num">{x2(k.cost > 0 && k.value > 0 ? k.value / k.cost : null)}</td></tr>)}</tbody>
+              <thead><tr><th>Competitor campaign</th><th>Spend</th><th>Clicks</th><th>Avg CPC</th><th>Conversions</th><th>ROAS</th></tr></thead>
+              <tbody>{v.competitor.campaigns.map((k) => <tr key={k.id}><td className="camp"><div className="cname">{k.name}</div><div className="ctype">{k.status === "ENABLED" ? "Running now" : nice(k.status)}</div></td><td className="num">{money(k.cost, c)}</td><td className="num">{k.clicks.toLocaleString("en-US")}</td><td className="num">{money(k.clicks > 0 ? k.cost / k.clicks : null, c, 2)}</td><td className="num">{k.conv.toFixed(0)}</td><td className="num">{x2(k.cost > 0 && k.value > 0 ? k.value / k.cost : null)}</td></tr>)}</tbody>
             </table>
           </div>
         )}
         {v.competitor.keywords.length > 0 && (
           <div className="table-wrap" style={{ marginTop: 10 }}>
             <table>
-              <thead><tr><th>Competitor keyword</th><th>Clicks</th><th>Spend</th><th>CPC paid</th><th>Purchases</th></tr></thead>
+              <thead><tr><th>Competitor keyword</th><th>Clicks</th><th>Spend</th><th>CPC paid</th><th>Conversions</th></tr></thead>
               <tbody>{v.competitor.keywords.map((k) => <tr key={k.text}><td>{k.text}</td><td className="num">{k.clicks}</td><td className="num">{money(k.cost, c)}</td><td className="num">{money(k.avgCpc, c, 2)}</td><td className="num">{k.conv.toFixed(0)}</td></tr>)}</tbody>
             </table>
           </div>
@@ -206,11 +213,11 @@ function AccountReport({ v }: { v: ReportView }) {
                     <tr key={x.name}>
                       <td className="camp"><div className="cname">{x.name}</div></td>
                       <td style={{ textAlign: "left" }}>{x.type}</td>
-                      <td className="num">{x.low ? <span className="badge red">{pct(x.is, 1)}</span> : pct(x.is, 1)}</td>
-                      <td className="num">{pct(x.topIs, 1)}</td>
-                      <td className="num">{pct(x.absTop, 1)}</td>
-                      <td className="num">{pct(x.lostBudget, 1)}</td>
-                      <td className="num">{pct(x.lostRank, 1)}</td>
+                      <td className="num">{x.low ? <span className="badge red">{share(x.is)}</span> : share(x.is)}</td>
+                      <td className="num">{share(x.topIs)}</td>
+                      <td className="num">{share(x.absTop)}</td>
+                      <td className="num">{share(x.lostBudget)}</td>
+                      <td className="num">{share(x.lostRank)}</td>
                       <td className="num">{money(x.cost, c)}</td>
                     </tr>
                   ))}
@@ -238,7 +245,7 @@ export default async function ReportPage() {
       const waiting: string[] = [];
       for (const a of accounts) {
         const raw = a.error ? null : await loadReport(a.id);
-        if (raw) views.push(buildReportView(raw, cfg));
+        if (raw) views.push(buildReportView(raw, cfg, await loadConversionMix(a.id, raw.period.from, raw.period.to)));
         else waiting.push(a.name || a.id);
       }
       views.sort((a, b) => b.totalCost - a.totalCost);
@@ -251,7 +258,7 @@ export default async function ReportPage() {
       <div className="page-head">
         <div>
           <h1>Google Ads breakdown</h1>
-          <p>Month to date, one section per market. Generated from the Google Ads accounts each morning.</p>
+          <p>Month to date, one section per market. Updated daily from the Google Ads accounts.</p>
         </div>
         <div className="head-actions no-print"><PrintButton /></div>
       </div>

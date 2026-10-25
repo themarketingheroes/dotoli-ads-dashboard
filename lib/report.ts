@@ -1,4 +1,5 @@
 import { readLatestJson } from "./store";
+import type { DailyStore } from "./types";
 
 // Raw month-to-date tables pushed by the Google Ads Script (see buildReport in the script).
 interface M { cost: number; clicks: number; impr: number; conv: number; value: number }
@@ -7,7 +8,7 @@ export interface RCampaign extends M {
   bidding: string; budget: number | null; is: number | ""; topIs: number | ""; absTopIs: number | ""; lostBudget: number | ""; lostRank: number | "";
 }
 interface RAdGroup extends M { campaignId: string; name: string }
-interface RProduct extends M { campaignId: string; type1: string; type2: string; cat1: string; cat2: string }
+interface RProduct extends M { campaignId: string; type1: string; type2: string; cat1: string; cat2: string; itemId?: string; title?: string }
 interface RTerm extends M { campaignId: string; term: string }
 interface RInsight { campaignId: string; label: string; impr: number; clicks: number; conv: number }
 interface RAssetGroup extends M { campaignId: string; id: string; name: string; status: string; strength: string; products: string[] }
@@ -29,6 +30,27 @@ export interface RawReport {
   userLists: RUserList[];
   allTimeCampaigns: RAllTime[];
   competitorKeywords: RCompKw[];
+  errors?: Record<string, string>; // query label -> error, from the script
+}
+
+// Month-to-date conversions per action from the stored daily history: primary (counted
+// in "Conversions") vs all (includes secondary actions).
+export interface ConvMix { name: string; category: string; primary: number; all: number }
+
+export async function loadConversionMix(googleId: string, from: string, to: string): Promise<ConvMix[]> {
+  const s = await readLatestJson<DailyStore>(`daily/google-${googleId}`);
+  if (!s) return [];
+  const agg = new Map<string, ConvMix>();
+  for (const r of s.rows) {
+    if (r.d < from || r.d > to) continue;
+    for (const [name, v] of Object.entries(r.a ?? {})) {
+      const x = agg.get(name) ?? { name, category: s.actions?.[name] ?? "", primary: 0, all: 0 };
+      x.primary += v[0] ?? 0;
+      x.all += v[2] ?? v[0] ?? 0;
+      agg.set(name, x);
+    }
+  }
+  return [...agg.values()];
 }
 
 export interface ReportConfig {
@@ -60,8 +82,71 @@ const TYPE: Record<string, string> = {
 export const typeName = (c: string) => TYPE[c] ?? c.replace(/_/g, " ").toLowerCase();
 const has = (text: string, words: string[]) => words.some((w) => w && text.toLowerCase().includes(w.toLowerCase()));
 const roas = (x: { cost: number; value: number }) => (x.cost > 0 && x.value > 0 ? x.value / x.cost : null);
+const plural = (n: number, word: string) => `${n.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${word}${Math.round(n) === 1 ? "" : "s"}`;
+const andList = (a: string[]) => (a.length <= 1 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`);
+const sentence = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
-export interface CampaignLine { id: string; name: string; type: string; focus: string; budget: number | null; cost: number; conv: number; value: number; roas: number | null; status: string; reasons: string }
+// Google Ads Scripts report newer status reasons as UNKNOWN; those are dropped.
+const REASON: Record<string, string> = {
+  BUDGET_CONSTRAINED: "budget limited", BIDDING_STRATEGY_LIMITED: "bid strategy limited", BIDDING_STRATEGY_LEARNING: "bid strategy learning",
+  BIDDING_STRATEGY_MISCONFIGURED: "bid strategy misconfigured", BIDDING_STRATEGY_CONSTRAINED: "bid strategy constrained",
+  HAS_ASSET_GROUPS_LIMITED_BY_POLICY: "asset groups limited by policy", HAS_ADS_LIMITED_BY_POLICY: "ads limited by policy",
+  HAS_ADS_DISAPPROVED: "ads disapproved", MOST_ADS_UNDER_REVIEW: "ads under review", MISSING_INVOICE_SETUP: "billing not set up",
+  CAMPAIGN_PENDING: "pending", CAMPAIGN_ENDED: "ended",
+};
+function statusText(c: RCampaign): string {
+  const st = c.status === "ENABLED" ? c.primaryStatus || "ENABLED" : c.status;
+  if (st === "ELIGIBLE" || st === "ENABLED") return "";
+  const reasons = (c.reasons || "").split(",").map((s) => s.trim()).filter((s) => s && s !== "UNKNOWN" && s !== "UNSPECIFIED")
+    .map((s) => REASON[s] ?? s.replace(/_/g, " ").toLowerCase());
+  return sentence(st) + (reasons.length ? `: ${reasons.join(", ")}` : "");
+}
+
+// Turns a PMax listing-group tree ("Includes Product type: x", "Includes Item ID: y", ...) into readable lines.
+function summarizeProducts(items: string[]): { lines: string[]; key: string } {
+  const types: string[] = [];
+  const other: string[] = [];
+  let items_ = 0;
+  let exItems = 0;
+  const exOther: string[] = [];
+  let all = items.length === 0;
+  for (const s of items) {
+    if (s === "All products") { all = true; continue; }
+    const m = s.match(/^(Includes|Excludes) (.*)$/);
+    if (!m) { other.push(s); continue; }
+    const [kind, ...rest] = m[2].split(": ");
+    const val = rest.join(": ");
+    if (m[1] === "Excludes") {
+      if (m[2] === "everything else") continue;
+      if (kind === "Item ID") exItems++; else exOther.push(m[2]);
+      continue;
+    }
+    if (kind === "Item ID") items_++;
+    else if (kind === "Product type") types.push(val);
+    else other.push(m[2]);
+  }
+  const lines: string[] = [];
+  if (types.length) {
+    const sorted = [...new Set(types)].sort((a, b) => a.localeCompare(b));
+    lines.push(`${plural(sorted.length, "product type")}: ${sorted.slice(0, 8).join(", ")}${sorted.length > 8 ? ` and ${sorted.length - 8} more` : ""}`);
+  }
+  if (items_) lines.push(`${plural(items_, "hand-picked product")} (by item ID)`);
+  lines.push(...other);
+  if (exItems) lines.push(`Excludes ${plural(exItems, "product")} by item ID`);
+  if (exOther.length) lines.push(`Excludes ${exOther.join(", ")}`);
+  if (!lines.length || (all && !types.length && !items_ && !other.length)) lines.unshift("All products");
+  const key = all && lines.length === 1 ? "all" : [...types].sort().join("|") + `#${items_}#${other.sort().join("|")}`;
+  return { lines, key };
+}
+
+const CONV_LABEL: Record<string, [string, string]> = {
+  PURCHASE: ["purchase", "purchases"], BEGIN_CHECKOUT: ["checkout started", "checkouts started"], ADD_TO_CART: ["add to cart", "add to carts"],
+  STORE_VISIT: ["store visit", "store visits"], GET_DIRECTIONS: ["direction request", "direction requests"], PHONE_CALL_LEAD: ["phone call", "phone calls"],
+  CONTACT: ["contact", "contacts"], SUBMIT_LEAD_FORM: ["lead form", "lead forms"], SIGNUP: ["sign-up", "sign-ups"], PAGE_VIEW: ["page view", "page views"],
+  ENGAGEMENT: ["engagement", "engagements"], STORE_SALE: ["store sale", "store sales"], BOOK_APPOINTMENT: ["booking", "bookings"],
+};
+
+export interface CampaignLine { id: string; name: string; type: string; focus: string; budget: number | null; cost: number; conv: number; value: number; roas: number | null; status: string }
 export interface CategoryLine { name: string; cost: number; share: number; conv: number; value: number; roas: number | null; priority: boolean; children: { name: string; cost: number }[] }
 export interface Opportunity { title: string; detail: string; extraPerDay: number; extraPerMonth: number }
 export interface ISLine { name: string; type: string; is: number | null; topIs: number | null; absTop: number | null; lostBudget: number | null; lostRank: number | null; cost: number; low: boolean }
@@ -75,10 +160,13 @@ export interface ReportView {
   campaigns: CampaignLine[];
   categories: CategoryLine[];
   categoryNote: string;
+  categoryEmpty: string;
   productCost: number;
+  conversions: { counted: string; note: string };
   brand: { brand: number; nonBrand: number; brandShare: number; termCoverage: number; pmaxEstimated: boolean; byType: { type: string; brand: number; nonBrand: number }[] } | null;
-  pmax: { campaign: string; cost: number; conv: number; value: number; assetGroups: { name: string; status: string; strength: string; cost: number; conv: number; value: number; products: string[] }[]; topCategories: { label: string; clicks: number; conv: number }[] }[];
+  pmax: { campaign: string; cost: number; conv: number; value: number; overlap: string; assetGroups: { name: string; status: string; strength: string; cost: number; conv: number; value: number; products: string[] }[]; topCategories: { label: string; clicks: number; conv: number }[] }[];
   opportunities: Opportunity[];
+  opportunityNote: string;
   remarketing: { lists: RUserList[]; verdict: string };
   competitor: { campaigns: RAllTime[]; keywords: { text: string; clicks: number; cost: number; avgCpc: number | null; conv: number }[]; accountCpa: number | null; accountRoas: number | null; verdict: string };
   impressionShare: ISLine[];
@@ -86,7 +174,7 @@ export interface ReportView {
 
 const pctOf = (v: number | "" | undefined | null) => (v === "" || v === undefined || v === null ? null : Number(v) * 100);
 
-export function buildReportView(r: RawReport, cfg: ReportConfig): ReportView {
+export function buildReportView(r: RawReport, cfg: ReportConfig, mix: ConvMix[] = []): ReportView {
   const fm = (n: number, d = 0) => new Intl.NumberFormat("en-US", { style: "currency", currency: r.currency || "USD", minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
   // Google's auto-created Local Services placeholders never belong in a client report.
   const active = r.campaigns.filter((c) => (c.status === "ENABLED" || c.cost > 0) && !(c.channel === "LOCAL_SERVICES" && c.cost === 0));
@@ -103,23 +191,52 @@ export function buildReportView(r: RawReport, cfg: ReportConfig): ReportView {
       if (!focus && (c.channel === "SHOPPING" || c.channel === "PERFORMANCE_MAX")) {
         const byType = new Map<string, number>();
         for (const p of r.products.filter((p) => p.campaignId === c.id)) {
-          const k = p.type2 ? `${p.type1} > ${p.type2}` : p.type1 || p.cat1 || "Other";
+          const k = p.type1 ? (p.type2 ? `${p.type1} > ${p.type2}` : p.type1) : p.cat1 || p.title || "Other";
           byType.set(k, (byType.get(k) ?? 0) + p.cost);
         }
         focus = topNames([...byType.entries()].map(([name, cost]) => ({ name, cost })));
       }
       return {
         id: c.id, name: c.name, type: typeName(c.channel) + (c.subType && c.subType !== "UNSPECIFIED" && c.subType !== "UNKNOWN" ? ` (${c.subType.replace(/_/g, " ").toLowerCase()})` : ""),
-        focus: focus || "Not broken down by Google", budget: c.budget, cost: c.cost, conv: c.conv, value: c.value, roas: roas(c),
-        status: c.status === "ENABLED" ? c.primaryStatus || "ENABLED" : c.status, reasons: c.reasons,
+        focus: focus || (c.channel === "SHOPPING" ? "All products in the feed" : "–"), budget: c.budget, cost: c.cost, conv: c.conv, value: c.value, roas: roas(c),
+        status: statusText(c),
       };
     })
     .sort((a, b) => b.cost - a.cost);
 
+  // What "Conversions" means in this account: primary actions only.
+  const counted = mix.filter((x) => x.primary >= 0.5).sort((a, b) => b.primary - a.primary);
+  const labelOf = (x: ConvMix) => {
+    const n = Math.round(x.primary);
+    const l = CONV_LABEL[x.category];
+    return `${n.toLocaleString("en-US")} ${l ? l[n === 1 ? 0 : 1] : `"${x.name.replace(/^.*\(web\)\s*/, "").replace(/_/g, " ")}"`}`;
+  };
+  const countedText = counted.length ? `"Conversions" here are Google's primary conversions: ${counted.map(labelOf).join(", ")} this month.` : "";
+  const secondaryPurchases = mix.filter((x) => x.category === "PURCHASE" && x.primary < 0.5).reduce((s, x) => s + x.all, 0);
+  const purchaseCounted = counted.some((x) => x.category === "PURCHASE");
+  const notPurchases = counted.filter((x) => x.category !== "PURCHASE");
+  const totalValue = r.campaigns.reduce((s, c) => s + c.value, 0);
+  // True when ROAS is built on values assigned to non-sale actions (directions, calls, ...), not revenue.
+  const valueNotRevenue = !purchaseCounted && totalValue > 0;
+  let convNote = "";
+  if (secondaryPurchases >= 0.5 && !purchaseCounted) {
+    convNote = `Purchases are set as a secondary conversion in this account (${plural(secondaryPurchases, "purchase")} recorded this month), so Google's bidding is not optimising for them and they are not in the Conversions column. Making the purchase action primary fixes this.`;
+  } else if (valueNotRevenue) {
+    convNote = "None of the counted conversions are online purchases, so conversion value and ROAS in this section come from the values set on those actions in Google Ads, not from sales revenue.";
+  } else if (purchaseCounted && notPurchases.length) {
+    const n = notPurchases.reduce((s, x) => s + x.primary, 0);
+    const all = counted.reduce((s, x) => s + x.primary, 0);
+    convNote = `${Math.round(n)} of ${plural(all, "conversion")} this month ${Math.round(n) === 1 ? "is" : "are"} not a purchase (${notPurchases.map(labelOf).join(", ")}), so conversions and ROAS overstate sales.`;
+  } else if (!counted.length && totalCost > 0) {
+    convNote = "Google recorded no primary conversions in this account this month.";
+  }
+  const conversions = { counted: countedText, note: convNote };
+
   // 1b. Spend by product category (Shopping + Performance Max products).
   const cats = new Map<string, CategoryLine>();
+  const byTitle = r.products.length > 0 && r.products.every((p) => !p.type1 && !p.cat1);
   for (const p of r.products) {
-    const name = p.type1 || p.cat1 || "Uncategorised";
+    const name = p.type1 || p.cat1 || (byTitle && p.title) || "Uncategorised";
     const sub = p.type2 || p.cat2 || "";
     const c = cats.get(name) ?? { name, cost: 0, share: 0, conv: 0, value: 0, roas: null, priority: has(name, cfg.priorityCategories), children: [] };
     c.cost += p.cost; c.conv += p.conv; c.value += p.value;
@@ -144,6 +261,18 @@ export function buildReportView(r: RawReport, cfg: ReportConfig): ReportView {
       categoryNote = `Flag: "${categories[firstNonPriority].name}" outspends at least one priority category. Priority categories took ${(prioShare * 100).toFixed(0)}% of product spend.`;
     } else categoryNote = `On track: priority categories are the heaviest spend, at ${(prioShare * 100).toFixed(0)}% of product spend.`;
   }
+  if (byTitle && categories.length) categoryNote = (categoryNote ? categoryNote + " " : "") + "Google did not return product types for this account, so spend is shown per product.";
+  const retailSpend = r.campaigns.filter((c) => c.channel === "SHOPPING" || c.channel === "PERFORMANCE_MAX").reduce((s, c) => s + c.cost, 0);
+  // Shopping campaigns always run on the feed, so no product rows there means the query failed.
+  const shoppingSpend = r.campaigns.filter((c) => c.channel === "SHOPPING").reduce((s, c) => s + c.cost, 0);
+  const productError = !r.products.length && (Object.keys(r.errors ?? {}).some((k) => k.startsWith("products")) || shoppingSpend > 0);
+  const categoryEmpty = categories.length
+    ? ""
+    : productError
+      ? "The product breakdown could not be read from Google Ads on the last run. It will appear after the next successful script run."
+      : retailSpend > 0
+        ? "Google reported no product-feed spend this month: the Performance Max spend here is not tied to products in the feed (for example store-visit campaigns)."
+        : "No Shopping or Performance Max spend this month.";
 
   // 1c. Brand vs non-brand.
   let brand: ReportView["brand"] = null;
@@ -187,21 +316,32 @@ export function buildReportView(r: RawReport, cfg: ReportConfig): ReportView {
   // 1d. Performance Max detail.
   const pmax = r.campaigns
     .filter((c) => c.channel === "PERFORMANCE_MAX" && (c.status === "ENABLED" || c.cost > 0))
-    .map((c) => ({
-      campaign: c.name,
-      cost: c.cost,
-      conv: c.conv,
-      value: c.value,
-      assetGroups: r.assetGroups
+    .map((c) => {
+      const groups = r.assetGroups
         .filter((a) => a.campaignId === c.id)
-        .sort((a, b) => b.cost - a.cost)
-        .map((a) => ({ name: a.name, status: a.status, strength: a.strength, cost: a.cost, conv: a.conv, value: a.value, products: a.products.length ? a.products : ["All products"] })),
-      topCategories: r.pmaxInsights
-        .filter((i) => i.campaignId === c.id)
-        .sort((a, b) => b.clicks - a.clicks)
-        .slice(0, 6)
-        .map((i) => ({ label: i.label, clicks: i.clicks, conv: i.conv })),
-    }))
+        .sort((a, b) => (a.status === "ENABLED" ? 0 : 1) - (b.status === "ENABLED" ? 0 : 1) || b.cost - a.cost)
+        .map((a) => ({ ...a, sum: summarizeProducts(a.products) }));
+      // Enabled asset groups that cover exactly the same products compete with each other.
+      const same = new Map<string, string[]>();
+      for (const g of groups.filter((g) => g.status === "ENABLED")) same.set(g.sum.key, [...(same.get(g.sum.key) ?? []), g.name]);
+      const dup = [...same.entries()].find(([, names]) => names.length > 1);
+      const overlap = dup
+        ? `${andList(dup[1].map((n) => `"${n}"`))} all cover the same products (${groups.find((g) => g.sum.key === dup[0])!.sum.lines[0].split(":")[0].toLowerCase()}), so Google can show any product from any of them: the split is by creative and audience signal, not by product category. If each group should push its own category, its product filter needs to include only that category.`
+        : "";
+      return {
+        campaign: c.name,
+        cost: c.cost,
+        conv: c.conv,
+        value: c.value,
+        overlap,
+        assetGroups: groups.map((a) => ({ name: a.name, status: a.status, strength: a.strength, cost: a.cost, conv: a.conv, value: a.value, products: a.sum.lines })),
+        topCategories: r.pmaxInsights
+          .filter((i) => i.campaignId === c.id)
+          .sort((a, b) => b.clicks - a.clicks)
+          .slice(0, 6)
+          .map((i) => ({ label: i.label === "(other)" ? "unlabelled searches" : i.label, clicks: i.clicks, conv: i.conv })),
+      };
+    })
     .sort((a, b) => b.cost - a.cost);
 
   // 1e. Opportunities: budget-limited campaigns that already convert, ranked by return.
@@ -218,21 +358,35 @@ export function buildReportView(r: RawReport, cfg: ReportConfig): ReportView {
       const growth = isNow && isNow > 0 && lostB > 0 ? Math.min(lostB / isNow, 1) : constrained ? 0.3 : 0;
       return { c, constrained, extra: dailyNow * growth, r: roas(c) ?? 0 };
     })
-    .filter((x) => x.constrained && x.extra > 0)
-    .sort((a, b) => b.r - a.r || b.c.conv / b.c.cost - a.c.conv / a.c.cost);
-  const opportunities: Opportunity[] = candidates.slice(0, 3).map((x) => ({
+    .filter((x) => x.constrained && x.extra > 0);
+  // Only suggest more budget where the return already holds up; otherwise budget is not the constraint.
+  const worthIt = (x: (typeof candidates)[number]) => x.r >= 1 && x.r >= acctRoas * 0.8;
+  const held = candidates.filter((x) => !worthIt(x));
+  const ranked = candidates.filter(worthIt).sort((a, b) => b.r - a.r || b.c.conv / b.c.cost - a.c.conv / a.c.cost);
+  const roasWord = valueNotRevenue ? "return on conversion value" : "ROAS";
+  const opportunityNote = held.length
+    ? `${andList(held.map((x) => `"${x.c.name}"`))} ${held.length === 1 ? "is" : "are"} limited by budget but ${held.length === 1 ? "returns" : "return"} ${andList(held.map((x) => `${x.r.toFixed(2)}x`))}, so more budget would mostly buy more of the same results. Improve conversion rate or tracking there before adding budget.`
+    : "";
+  const opportunities: Opportunity[] = ranked.slice(0, 3).map((x) => ({
     title: `Raise "${x.c.name}" budget`,
     detail:
-      `${typeName(x.c.channel)}: ${x.c.conv.toFixed(0)} conversions this month` +
-      (x.r ? ` at ${x.r.toFixed(2)}x ROAS (account average ${acctRoas.toFixed(2)}x)` : "") +
+      `${typeName(x.c.channel)}: ${plural(x.c.conv, "conversion")} this month` +
+      (x.r ? ` at ${x.r.toFixed(2)}x ${roasWord} (account average ${acctRoas.toFixed(2)}x)` : "") +
       (pctOf(x.c.lostBudget) ? `, losing ${pctOf(x.c.lostBudget)!.toFixed(0)}% of impressions to budget` : ", flagged by Google as budget limited") +
-      ". Increase in steps and watch cost per purchase.",
+      ". Increase in steps of about 10% and watch cost per conversion.",
     extraPerDay: x.extra,
     extraPerMonth: x.extra * 30,
   }));
 
   // 2. Remarketing audience volume.
-  const lists = [...r.userLists].sort((a, b) => b.sizeDisplay - a.sizeDisplay).slice(0, 12);
+  // The same list often appears twice (with and without "(system-defined)"); keep one.
+  const uniq = new Map<string, RUserList>();
+  for (const l of r.userLists) {
+    const name = l.name.replace(/\s*\(system-defined\)\s*$/i, "").trim();
+    const key = `${name.toLowerCase()}|${l.sizeSearch}|${l.sizeDisplay}`;
+    if (!uniq.has(key)) uniq.set(key, { ...l, name });
+  }
+  const lists = [...uniq.values()].sort((a, b) => b.sizeDisplay - a.sizeDisplay || b.sizeSearch - a.sizeSearch).slice(0, 12);
   const biggest = lists[0];
   let verdict = "No remarketing lists found in this account.";
   if (biggest) {
@@ -265,19 +419,20 @@ export function buildReportView(r: RawReport, cfg: ReportConfig): ReportView {
   const accountCpa = allConv > 0 ? allCost / allConv : null;
   const accountRoas = allCost > 0 && allValue > 0 ? allValue / allCost : null;
   const cc = compCampaigns.reduce((s, c) => ({ cost: s.cost + c.cost, conv: s.conv + c.conv, value: s.value + c.value, clicks: s.clicks + c.clicks }), { cost: 0, conv: 0, value: 0, clicks: 0 });
-  let compVerdict = "No earlier competitor campaigns found (none named with competitor, conquest or rival).";
+  let compVerdict = "No competitor campaigns found in this account's history (none named with competitor, conquest or rival).";
   if (compCampaigns.length) {
     const cpa = cc.conv > 0 ? cc.cost / cc.conv : null;
     const ro = cc.cost > 0 && cc.value > 0 ? cc.value / cc.cost : null;
     const avgCpc = cc.clicks > 0 ? cc.cost / cc.clicks : null;
     const worse = (cpa && accountCpa && cpa > accountCpa * 2) || (ro !== null && accountRoas && ro < accountRoas / 2) || cc.conv === 0;
     compVerdict =
-      `Past competitor campaigns spent ${fm(cc.cost)} for ${cc.clicks.toLocaleString("en-US")} clicks` +
+      `Competitor campaigns have spent ${fm(cc.cost)} in total for ${plural(cc.clicks, "click")}` +
       (avgCpc ? ` (average CPC ${fm(avgCpc, 2)})` : "") +
-      ` and ${cc.conv.toFixed(0)} conversions` +
+      ` and brought ${plural(cc.conv, "conversion")}` +
       (ro !== null ? ` at ${ro.toFixed(2)}x ROAS` : "") +
-      (accountRoas ? ` vs ${accountRoas.toFixed(2)}x for the account overall` : "") +
-      ". " +
+      "." +
+      (accountRoas ? ` The account as a whole returns ${accountRoas.toFixed(2)}x over the same history.` : "") +
+      " " +
       (worse
         ? "Returns were well below the account average, so if we test again it should be a separate campaign with a small capped budget, kept out of PMax."
         : "Results held up against the account average, so a separate, capped competitor campaign (outside PMax) is worth testing.");
@@ -301,10 +456,13 @@ export function buildReportView(r: RawReport, cfg: ReportConfig): ReportView {
     campaigns,
     categories,
     categoryNote,
+    categoryEmpty,
     productCost,
+    conversions,
     brand,
     pmax,
     opportunities,
+    opportunityNote,
     remarketing: { lists, verdict },
     competitor: { campaigns: compCampaigns, keywords: compKw, accountCpa, accountRoas, verdict: compVerdict },
     impressionShare,
