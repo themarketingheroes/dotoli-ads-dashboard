@@ -27,19 +27,21 @@ function Section({ n, title, children }: { n: string; title: string; children: R
   );
 }
 
-function AccountReport({ v }: { v: ReportView }) {
+function AccountReport({ v, n, total, market }: { v: ReportView; n: number; total: number; market: string }) {
   const c = v.currency;
   return (
     <div className="card raccount" id={accountAnchor(v.account)}>
       <div className="raccount-head">
         <div>
+          <div className="reyebrow">{market} · Google Ads account {n} of {total}</div>
           <h2>{v.account}</h2>
-          <p className="muted">
+          <p>
             Google Ads, month to date ({fmtRange(v.period.from, v.period.to)}). All figures in {c}. Total spend {money(v.totalCost, c)}.
             {" "}Data as of {new Date(v.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET.
           </p>
         </div>
       </div>
+      <div className="raccount-body">
 
       <Section n="1a" title="Active campaigns">
         <div className="table-wrap">
@@ -226,6 +228,7 @@ function AccountReport({ v }: { v: ReportView }) {
           </>
         )}
       </Section>
+      </div>
     </div>
   );
 }
@@ -252,6 +255,7 @@ export default async function ReportPage() {
     }),
   );
 
+  let seq = 0;
   const jump = markets.flatMap(({ views }) => views.map((v) => ({ id: accountAnchor(v.account), label: v.account })));
 
   return (
@@ -266,9 +270,12 @@ export default async function ReportPage() {
       {jump.length > 1 && <ScrollSpy items={jump} variant="tabs" />}
       {markets.map(({ client, views, waiting }) => (
         <section key={client.slug} className="rmarket">
-          <h2 className="rmarket-title">{client.name}</h2>
+          <div className="rmarket-head">
+            <span className="reyebrow">Market</span>
+            <h2 className="rmarket-title">{client.name}</h2>
+          </div>
           {views.length === 0 && <div className="card empty">Waiting for the Google Ads Script to send this market&apos;s data{waiting.length ? ` (${waiting.join(", ")})` : ""}.</div>}
-          {views.map((v) => <AccountReport key={v.account} v={v} />)}
+          {views.map((v) => <AccountReport key={v.account} v={v} n={++seq} total={jump.length} market={client.name} />)}
         </section>
       ))}
     </Shell>

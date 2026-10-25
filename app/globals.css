@@ -442,3 +442,22 @@ td .sub { display: block; color: var(--muted); font-size: 11px; margin-top: 2px;
   .rtab.active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
   .raccount { scroll-margin-top: 120px; }
 }
+/* Report: clear separation between markets and accounts */
+.rmarket { margin-bottom: 64px; }
+.rmarket + .rmarket { padding-top: 40px; border-top: 2px solid var(--fg); }
+.rmarket-head { margin-bottom: 18px; }
+.rmarket-head .rmarket-title { margin: 2px 0 0; }
+.reyebrow { display: block; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.raccount { padding: 0; overflow: hidden; margin-bottom: 40px; border: 1px solid var(--border); }
+.raccount-head { background: var(--fg); color: var(--bg); padding: 20px 24px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.raccount-head .reyebrow { color: inherit; opacity: 0.65; margin-bottom: 4px; }
+.raccount-head h2 { color: inherit; }
+.raccount-head p { color: inherit; opacity: 0.75; }
+.raccount-body { padding: 4px 24px 24px; }
+@media (max-width: 760px) {
+  .raccount-head { padding: 16px; }
+  .raccount-body { padding: 4px 16px 18px; }
+}
+@media print {
+  .raccount + .raccount, .rmarket + .rmarket { break-before: page; }
+}
