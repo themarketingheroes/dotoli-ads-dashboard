@@ -10,11 +10,17 @@ export interface IngestAccount {
   rows?: [string, string, string, string, number, number, number][]; // date, campaign id, name, channel, cost, impressions, clicks
   conv?: [string, string, string, string, number, number, number?][]; // date, campaign id, action, category, conversions, value, all conversions
   report?: Record<string, unknown>; // month-to-date breakdown for the report page
+  reportOnly?: boolean; // second send from the feed: store the report, leave the daily history alone
 }
 
 export async function ingestAccount(p: IngestAccount): Promise<{ id: string; rows: number; from: string; to: string; kept?: boolean }> {
   const id = String(p.account.id).replace(/\D/g, "");
   if (!id) throw new Error("Missing account id");
+
+  if (p.reportOnly) {
+    if (p.report) await writeJson(`report/google-${id}`, { ...p.report, account: p.account.name, currency: p.account.currency }, 3);
+    return { id, rows: 0, from: "", to: "", kept: true };
+  }
 
   // A push without daily spend rows must never wipe stored history: keep the
   // stored rows and only update the report and campaign settings.

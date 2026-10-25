@@ -88,7 +88,8 @@ const pctOf = (v: number | "" | undefined | null) => (v === "" || v === undefine
 
 export function buildReportView(r: RawReport, cfg: ReportConfig): ReportView {
   const fm = (n: number, d = 0) => new Intl.NumberFormat("en-US", { style: "currency", currency: r.currency || "USD", minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
-  const active = r.campaigns.filter((c) => c.status === "ENABLED" || c.cost > 0);
+  // Google's auto-created Local Services placeholders never belong in a client report.
+  const active = r.campaigns.filter((c) => (c.status === "ENABLED" || c.cost > 0) && !(c.channel === "LOCAL_SERVICES" && c.cost === 0));
   const totalCost = r.campaigns.reduce((s, c) => s + c.cost, 0);
 
   // 1a. Campaigns with what they focus on.
