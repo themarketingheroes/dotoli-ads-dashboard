@@ -20,6 +20,14 @@ export default function ScrollSpy({ items, variant }: { items: { id: string; lab
     return () => window.removeEventListener("scroll", onScroll);
   }, [items]);
 
+  // Keep the highlighted tab visible in the horizontal bar on phones.
+  useEffect(() => {
+    if (variant !== "tabs") return;
+    const el = document.querySelector<HTMLElement>(`.rtabs a[href="#${current}"]`);
+    const bar = el?.parentElement;
+    if (el && bar) bar.scrollTo({ left: el.offsetLeft - 16, behavior: "smooth" });
+  }, [current, variant]);
+
   return (
     <div className={variant === "side" ? "subnav" : "rtabs no-print"}>
       {items.map((it) => (
