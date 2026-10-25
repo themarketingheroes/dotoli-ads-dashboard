@@ -221,7 +221,7 @@ export function buildReportView(r: RawReport, cfg: ReportConfig, mix: ConvMix[] 
     const l = CONV_LABEL[x.category];
     return `${n.toLocaleString("en-US")} ${l ? l[n === 1 ? 0 : 1] : `"${x.name.replace(/^.*\(web\)\s*/, "").replace(/_/g, " ")}"`}`;
   };
-  const countedText = counted.length ? `"Conversions" here are Google's primary conversions: ${counted.map(labelOf).join(", ")} this month.` : "";
+  const countedText = counted.length ? `Conversion actions counted this month: ${counted.map(labelOf).join(", ")}.` : "";
   const secondaryPurchases = mix.filter((x) => x.category === "PURCHASE" && x.primary < 0.5).reduce((s, x) => s + x.all, 0);
   const purchaseCounted = counted.some((x) => x.category === "PURCHASE");
   const notPurchases = counted.filter((x) => x.category !== "PURCHASE");
@@ -292,7 +292,7 @@ export function buildReportView(r: RawReport, cfg: ReportConfig, mix: ConvMix[] 
   }
   const untyped = categories.find((c) => c.name === NO_TYPE);
   if (untyped && untyped.share >= 0.05) {
-    categoryNote += ` ${moneyShort(untyped.cost)} (${(untyped.share * 100).toFixed(0)}%) went to products with no product type in the feed${untyped.children[0] ? `, mostly ${untyped.children[0].name}` : ""}; adding product types to those items makes this split complete.`;
+    categoryNote += ` ${moneyShort(untyped.cost)} (${(untyped.share * 100).toFixed(0)}%) went to products with no product type in the feed${untyped.children[0] ? `, mostly ${untyped.children[0].name}` : ""}.`;
   }
   const otherPmax = r.campaigns.filter((c) => c.channel === "PERFORMANCE_MAX").reduce((s, c) => s + c.cost, 0) + r.campaigns.filter((c) => c.channel === "SHOPPING").reduce((s, c) => s + c.cost, 0) - productCost;
   const productScope = otherPmax > 1 && productCost > 0
@@ -408,10 +408,10 @@ export function buildReportView(r: RawReport, cfg: ReportConfig, mix: ConvMix[] 
   const opportunities: Opportunity[] = ranked.slice(0, 3).map((x) => ({
     title: `Raise "${x.c.name}" budget`,
     detail:
-      `${typeName(x.c.channel)}: ${plural(x.c.conv, "conversion")} this month` +
+      `${typeName(x.c.channel)}: ${plural(x.c.conv, "conversion action")} this month` +
       (x.r ? ` at ${x.r.toFixed(2)}x ${roasWord} (account average ${acctRoas.toFixed(2)}x)` : "") +
       (pctOf(x.c.lostBudget) ? `, losing ${pctOf(x.c.lostBudget)!.toFixed(0)}% of impressions to budget` : ", flagged by Google as budget limited") +
-      ". Increase in steps of about 10% and watch cost per conversion.",
+      ". Increase in steps of about 10% and watch cost per conversion action.",
     extraPerDay: x.extra,
     extraPerMonth: x.extra * 30,
   }));
@@ -466,7 +466,7 @@ export function buildReportView(r: RawReport, cfg: ReportConfig, mix: ConvMix[] 
     compVerdict =
       `Competitor campaigns have spent ${fm(cc.cost)} in total for ${plural(cc.clicks, "click")}` +
       (avgCpc ? ` (average CPC ${fm(avgCpc, 2)})` : "") +
-      ` and brought ${plural(cc.conv, "conversion")}` +
+      ` and brought ${plural(cc.conv, "conversion action")}` +
       (ro !== null ? ` at ${ro.toFixed(2)}x ROAS` : "") +
       "." +
       (accountRoas ? ` The account as a whole returns ${accountRoas.toFixed(2)}x over the same history.` : "") +

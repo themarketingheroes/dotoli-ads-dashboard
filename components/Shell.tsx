@@ -3,6 +3,7 @@ import type { Viewer } from "@/lib/access";
 import type { Snapshot } from "@/lib/types";
 import { Logo } from "./Icons";
 import MobileNav from "./MobileNav";
+import ScrollSpy from "./ScrollSpy";
 import TogasLogo from "./TogasLogo";
 import { theme } from "@/lib/config";
 import { reportEnabled } from "@/lib/report";
@@ -22,6 +23,7 @@ export default function Shell({
   active,
   title,
   qs = "",
+  subnav,
   children,
 }: {
   viewer: Viewer;
@@ -29,6 +31,7 @@ export default function Shell({
   active?: string;
   title?: string;
   qs?: string; // keeps the selected date range when moving between pages
+  subnav?: { id: string; label: string }[]; // jump links shown under the active page
   children: React.ReactNode;
 }) {
   return (
@@ -80,6 +83,7 @@ export default function Shell({
             <>
               <h6>Reports</h6>
               <Link href="/report" className={`navlink${active === "__report" ? " active" : ""}`}>Google Ads report</Link>
+              {active === "__report" && subnav?.length ? <ScrollSpy items={subnav} variant="side" /> : null}
             </>
           )}
           {viewer.isOwner && (

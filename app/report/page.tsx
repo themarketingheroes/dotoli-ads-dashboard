@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import PrintButton from "@/components/PrintButton";
+import ScrollSpy from "@/components/ScrollSpy";
 import Shell from "@/components/Shell";
 import { currentViewer } from "@/lib/access";
 import { fmtRange } from "@/lib/range";
@@ -14,6 +15,7 @@ const pct = (n: number | null, d = 0) => (n === null ? "–" : `${n.toFixed(d)}%
 // Google reports impression share below 10% as 0.0999 and above 90% as 0.9001.
 const share = (n: number | null) => (n === null ? "–" : Math.abs(n - 9.99) < 0.001 ? "<10%" : Math.abs(n - 90.01) < 0.001 ? ">90%" : `${n.toFixed(1)}%`);
 const x2 = (n: number | null) => (n === null ? "–" : `${n.toFixed(2)}x`);
+const accountAnchor = (name: string) => `acct-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
 const nice = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 function Section({ n, title, children }: { n: string; title: string; children: React.ReactNode }) {
@@ -28,7 +30,7 @@ function Section({ n, title, children }: { n: string; title: string; children: R
 function AccountReport({ v }: { v: ReportView }) {
   const c = v.currency;
   return (
-    <div className="card raccount">
+    <div className="card raccount" id={accountAnchor(v.account)}>
       <div className="raccount-head">
         <div>
           <h2>{v.account}</h2>
@@ -42,7 +44,7 @@ function AccountReport({ v }: { v: ReportView }) {
       <Section n="1a" title="Active campaigns">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Campaign</th><th style={{ textAlign: "left" }}>Type</th><th style={{ textAlign: "left" }}>Focus</th><th>Daily budget</th><th>Spend this month</th><th>Conversions</th><th>Conv. value</th><th>ROAS</th></tr></thead>
+            <thead><tr><th>Campaign</th><th style={{ textAlign: "left" }}>Type</th><th style={{ textAlign: "left" }}>Focus</th><th>Daily budget</th><th>Spend this month</th><th>Conversion actions</th><th>Conv. value</th><th>ROAS</th></tr></thead>
             <tbody>
               {v.campaigns.map((x) => (
                 <tr key={x.id}>
@@ -60,7 +62,6 @@ function AccountReport({ v }: { v: ReportView }) {
           </table>
         </div>
         {v.conversions.counted && <p className="muted rsmall">{v.conversions.counted}</p>}
-        {v.conversions.note && <p className="rnote flag">{v.conversions.note}</p>}
       </Section>
 
       <Section n="1b" title="Spend by product category">
@@ -71,7 +72,7 @@ function AccountReport({ v }: { v: ReportView }) {
             {v.categoryNote && <p className={`rnote ${/^Flag|no product type in the feed/.test(v.categoryNote) ? "flag" : "ok"}`}>{v.categoryNote.trim()}</p>}
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Category</th><th>Spend</th><th>Share</th><th>Conversions</th><th>Conv. value</th><th>ROAS</th></tr></thead>
+                <thead><tr><th>Category</th><th>Spend</th><th>Share</th><th>Conversion actions</th><th>Conv. value</th><th>ROAS</th></tr></thead>
                 <tbody>
                   {v.categories.map((k) => (
                     <tr key={k.name}>
@@ -124,11 +125,10 @@ function AccountReport({ v }: { v: ReportView }) {
         ) : (
           v.pmax.map((p) => (
             <div key={p.campaign} className="rpmax">
-              <h4>{p.campaign} <span className="muted">· {money(p.cost, c)} spend · {p.conv.toFixed(0)} conversion{Math.round(p.conv) === 1 ? "" : "s"} · {money(p.value, c)} conv. value</span></h4>
-              {p.overlap && <p className="rnote flag">{p.overlap}</p>}
+              <h4>{p.campaign} <span className="muted">· {money(p.cost, c)} spend · {p.conv.toFixed(0)} conversion action{Math.round(p.conv) === 1 ? "" : "s"} · {money(p.value, c)} conv. value</span></h4>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Asset group</th><th style={{ textAlign: "left" }}>Products covered</th><th>Ad strength</th><th>Spend</th><th>Conversions</th><th>ROAS</th></tr></thead>
+                  <thead><tr><th>Asset group</th><th style={{ textAlign: "left" }}>Products covered</th><th>Ad strength</th><th>Spend</th><th>Conversion actions</th><th>ROAS</th></tr></thead>
                   <tbody>
                     {p.assetGroups.map((a) => (
                       <tr key={a.name}>
@@ -152,9 +152,8 @@ function AccountReport({ v }: { v: ReportView }) {
       </Section>
 
       <Section n="1e" title="Opportunities for extra budget">
-        {v.opportunityNote && <p className="rnote flag">{v.opportunityNote}</p>}
         {v.opportunities.length === 0 ? (
-          !v.opportunityNote && <p className="muted">No converting campaign is clearly held back by budget this month.</p>
+          <p className="muted">No converting campaign is clearly held back by budget this month.</p>
         ) : (
           <ol className="ropps">
             {v.opportunities.map((o, i) => (
@@ -184,7 +183,7 @@ function AccountReport({ v }: { v: ReportView }) {
         {v.competitor.campaigns.length > 0 && (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Competitor campaign</th><th>Spend</th><th>Clicks</th><th>Avg CPC</th><th>Conversions</th><th>ROAS</th></tr></thead>
+              <thead><tr><th>Competitor campaign</th><th>Spend</th><th>Clicks</th><th>Avg CPC</th><th>Conversion actions</th><th>ROAS</th></tr></thead>
               <tbody>{v.competitor.campaigns.map((k) => <tr key={k.id}><td className="camp"><div className="cname">{k.name}</div><div className="ctype">{k.status === "ENABLED" ? "Running now" : nice(k.status)}</div></td><td className="num">{money(k.cost, c)}</td><td className="num">{k.clicks.toLocaleString("en-US")}</td><td className="num">{money(k.clicks > 0 ? k.cost / k.clicks : null, c, 2)}</td><td className="num">{k.conv.toFixed(0)}</td><td className="num">{x2(k.cost > 0 && k.value > 0 ? k.value / k.cost : null)}</td></tr>)}</tbody>
             </table>
           </div>
@@ -192,7 +191,7 @@ function AccountReport({ v }: { v: ReportView }) {
         {v.competitor.keywords.length > 0 && (
           <div className="table-wrap" style={{ marginTop: 10 }}>
             <table>
-              <thead><tr><th>Competitor keyword</th><th>Clicks</th><th>Spend</th><th>CPC paid</th><th>Conversions</th></tr></thead>
+              <thead><tr><th>Competitor keyword</th><th>Clicks</th><th>Spend</th><th>CPC paid</th><th>Conversion actions</th></tr></thead>
               <tbody>{v.competitor.keywords.map((k) => <tr key={k.text}><td>{k.text}</td><td className="num">{k.clicks}</td><td className="num">{money(k.cost, c)}</td><td className="num">{money(k.avgCpc, c, 2)}</td><td className="num">{k.conv.toFixed(0)}</td></tr>)}</tbody>
             </table>
           </div>
@@ -253,8 +252,10 @@ export default async function ReportPage() {
     }),
   );
 
+  const jump = markets.flatMap(({ views }) => views.map((v) => ({ id: accountAnchor(v.account), label: v.account })));
+
   return (
-    <Shell viewer={viewer} snapshot={snapshot} active="__report" title="Google Ads report">
+    <Shell viewer={viewer} snapshot={snapshot} active="__report" title="Google Ads report" subnav={jump}>
       <div className="page-head">
         <div>
           <h1>Google Ads breakdown</h1>
@@ -262,6 +263,7 @@ export default async function ReportPage() {
         </div>
         <div className="head-actions no-print"><PrintButton /></div>
       </div>
+      {jump.length > 1 && <ScrollSpy items={jump} variant="tabs" />}
       {markets.map(({ client, views, waiting }) => (
         <section key={client.slug} className="rmarket">
           <h2 className="rmarket-title">{client.name}</h2>
