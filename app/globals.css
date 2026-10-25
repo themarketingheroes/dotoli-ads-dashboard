@@ -427,3 +427,5 @@ td .sub { display: block; color: var(--muted); font-size: 11px; margin-top: 2px;
   .raccount { break-before: auto; }
   .table-wrap { overflow: visible; }
 }
+.acct-card .stats.conv-lines { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 640px) { .acct-card .stats.conv-lines { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

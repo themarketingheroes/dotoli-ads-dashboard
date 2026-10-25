@@ -1,4 +1,4 @@
-import { actionBreakdown, ActionLine, byCampaign, dailySeries, ECOM_FUNNEL, funnelTotals, FunnelTotals, sumRange } from "./aggregate";
+import { actionBreakdown, ActionLine, byCampaign, ConversionLine, conversionLines, dailySeries, ECOM_FUNNEL, funnelTotals, FunnelTotals, sumRange } from "./aggregate";
 import { accountRule } from "./config";
 import { addDays } from "./dates";
 import { loadStore } from "./history";
@@ -45,6 +45,7 @@ export interface AccountView {
   rule: ConversionRule | null;
   ecommerce: boolean;
   funnel: FunnelStepView[] | null; // steps with any activity in either period
+  conversions: ConversionLine[]; // each conversion type, highest first
   historyFrom: string | null;
 }
 
@@ -66,7 +67,7 @@ export async function accountView(report: AccountReport, range: Range, withDetai
     ecommerce,
   };
   if (!store) {
-    return { ...base, resultLabel: report.resultLabel, cur: empty(), prev: null, series: [], cSeries: null, campaigns: [], actions: null, funnel: null, historyFrom: null };
+    return { ...base, resultLabel: report.resultLabel, cur: empty(), prev: null, series: [], cSeries: null, campaigns: [], actions: null, funnel: null, conversions: [], historyFrom: null };
   }
 
   const hasCompare = !!(range.cFrom && range.cTo);
@@ -129,6 +130,7 @@ export async function accountView(report: AccountReport, range: Range, withDetai
     campaigns,
     actions: withDetail && report.platform === "google" ? actionBreakdown(store, rule, range.from, range.to) : null,
     funnel,
+    conversions: conversionLines(store, rule, range.from, range.to, range.cFrom ?? undefined, range.cTo ?? undefined),
     historyFrom: store.from,
   };
 }

@@ -64,7 +64,6 @@ function AccountCard({ v, href, plain = false }: { v: AccountView; href: string;
   const warn = v.flags.filter((f) => f.level === "warning").length;
   const c = v.cur;
   const p = v.prev;
-  const f = (k: string) => v.funnel?.find((s) => s.key === k)?.cur ?? 0;
   return (
     <Link href={href} className={plain ? "acct-card acct-row" : "card client-card acct-card"}>
       <div className="cc-head">
@@ -86,27 +85,31 @@ function AccountCard({ v, href, plain = false }: { v: AccountView; href: string;
             <Delta now={c.spend} before={p?.spend ?? null} good="neutral" />
             <span className="muted" style={{ fontSize: 12 }}>spend</span>
           </div>
-          <div className="stats">
-            {v.ecommerce ? (
-              <>
-                <div><div className="l">Purchases</div><div className="v">{num(c.results, 1)} {p && <Delta now={c.results} before={p.results} />}</div></div>
-                <div><div className="l">Revenue</div><div className="v">{money(c.value, v.currency)}</div></div>
-                <div><div className="l">ROAS</div><div className="v">{c.roas === null ? "–" : `${c.roas.toFixed(2)}x`} {p && <Delta now={c.roas} before={p.roas} />}</div></div>
-              </>
+          {plain ? (
+            v.conversions.length ? (
+              <div className="stats conv-lines">
+                {v.conversions.slice(0, 4).map((x) => (
+                  <div key={x.label}><div className="l">{x.label}</div><div className="v">{num(x.cur)} {x.prev !== null && <Delta now={x.cur} before={x.prev} />}</div></div>
+                ))}
+              </div>
             ) : (
-              <>
-                <div><div className="l">{v.resultLabel}</div><div className="v">{num(c.results, 1)} {p && <Delta now={c.results} before={p.results} />}</div></div>
-                <div><div className="l">Per result</div><div className="v">{c.costPerResult === null ? "–" : money(c.costPerResult, v.currency)}</div></div>
-                <div><div className="l">CTR</div><div className="v">{c.ctr === null ? "–" : `${c.ctr.toFixed(2)}%`}</div></div>
-              </>
-            )}
-          </div>
-          {v.ecommerce && (
-            <div className="mini-funnel">
-              {v.funnel?.some((s) => s.key === "quick") && <><span>Quick Shop <b>{num(f("quick"))}</b></span><span className="arr">→</span></>}
-              <span>Add to cart <b>{num(f("atc"))}</b></span><span className="arr">→</span>
-              <span>Checkout <b>{num(f("checkout"))}</b></span><span className="arr">→</span>
-              <span>Purchase <b>{num(f("purchase"))}</b></span>
+              <div className="stats conv-lines"><div className="muted" style={{ fontSize: 13 }}>No conversions in this period</div></div>
+            )
+          ) : (
+            <div className="stats">
+              {v.ecommerce ? (
+                <>
+                  <div><div className="l">Purchases</div><div className="v">{num(c.results, 1)} {p && <Delta now={c.results} before={p.results} />}</div></div>
+                  <div><div className="l">Revenue</div><div className="v">{money(c.value, v.currency)}</div></div>
+                  <div><div className="l">ROAS</div><div className="v">{c.roas === null ? "–" : `${c.roas.toFixed(2)}x`} {p && <Delta now={c.roas} before={p.roas} />}</div></div>
+                </>
+              ) : (
+                <>
+                  <div><div className="l">{v.resultLabel}</div><div className="v">{num(c.results, 1)} {p && <Delta now={c.results} before={p.results} />}</div></div>
+                  <div><div className="l">Per result</div><div className="v">{c.costPerResult === null ? "–" : money(c.costPerResult, v.currency)}</div></div>
+                  <div><div className="l">CTR</div><div className="v">{c.ctr === null ? "–" : `${c.ctr.toFixed(2)}%`}</div></div>
+                </>
+              )}
             </div>
           )}
           <svg className="spark" viewBox="0 0 300 28" preserveAspectRatio="none" aria-hidden="true" style={{ width: "100%", height: 28 }}>
