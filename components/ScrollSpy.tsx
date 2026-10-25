@@ -23,9 +23,15 @@ export default function ScrollSpy({ items, variant }: { items: { id: string; lab
   // Keep the highlighted tab visible in the horizontal bar on phones.
   useEffect(() => {
     if (variant !== "tabs") return;
-    const el = document.querySelector<HTMLElement>(`.rtabs a[href="#${current}"]`);
-    const bar = el?.parentElement;
-    if (el && bar) bar.scrollLeft += el.getBoundingClientRect().left - bar.getBoundingClientRect().left - 16;
+    const align = () => {
+      const el = document.querySelector<HTMLElement>(`.rtabs a[href="#${current}"]`);
+      const bar = el?.parentElement;
+      if (el && bar) bar.scrollLeft += el.getBoundingClientRect().left - bar.getBoundingClientRect().left - 16;
+    };
+    align();
+    // Again once the page has settled (jumping to #account on load scrolls after hydration).
+    const t = window.setTimeout(align, 400);
+    return () => window.clearTimeout(t);
   }, [current, variant]);
 
   return (
