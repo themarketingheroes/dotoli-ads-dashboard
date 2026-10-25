@@ -12,9 +12,22 @@ export interface IngestAccount {
   report?: Record<string, unknown>; // month-to-date breakdown for the report page
 }
 
-export async function ingestAccount(p: IngestAccount): Promise<{ id: string; rows: number; from: string; to: string }> {
+export async function ingestAccount(p: IngestAccount): Promise<{ id: string; rows: number; from: string; to: string; kept?: boolean }> {
   const id = String(p.account.id).replace(/\D/g, "");
   if (!id) throw new Error("Missing account id");
+
+  // A push without daily spend rows must never wipe stored history: keep the
+  // stored rows and only update the report and campaign settings.
+  if (!(p.rows?.length)) {
+    const existing = await readLatestJson<DailyStore>(`daily/google-${id}`);
+    if (existing?.rows.some((r) => r.s > 0)) {
+      if (p.campaigns?.length) existing.live = p.campaigns.map((c) => ({ ...c, id: String(c.id) }));
+      existing.updatedAt = new Date().toISOString();
+      await saveStore(existing);
+      if (p.report) await writeJson(`report/google-${id}`, { ...p.report, account: existing.name, currency: existing.currency }, 3);
+      return { id, rows: existing.rows.length, from: existing.from, to: existing.to, kept: true };
+    }
+  }
 
   const byKey = new Map<string, DailyRow>();
   const campaigns: DailyStore["campaigns"] = {};
